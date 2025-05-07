@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Advanced D3 Dashboard</title>
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <style>
+    body {
+      margin: 0;
+      font-family: 'Segoe UI', sans-serif;
+      background-color: #1e1e2f;
+      color: #f0f0f0;
+    }
+
+    .toggle-theme {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      padding: 10px 16px;
+      background: #00cec9;
+      border: none;
+      border-radius: 6px;
+      color: #fff;
+      cursor: pointer;
+      z-index: 1000;
+    }
+
+    .container {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+      gap: 20px;
+      padding: 20px;
+    }
+
+    .chart-box {
+      background: #2e2e3e;
+      border-radius: 12px;
+      padding: 20px;
+      position: relative;
+      overflow: hidden;
+      cursor: pointer;
+      transition: transform 0.3s ease;
+    }
+
+    .chart-box:hover {
+      transform: scale(1.02);
+    }
+
+    .chart-title {
+      font-size: 18px;
+      margin-bottom: 10px;
+      color: #00cec9;
+      text-align: center;
+    }
+
+    .detail-popup {
+      position: fixed;
+      top: 10%;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 90%;
+      max-width: 800px;
+      background: #2c3e50;
+      color: white;
+      padding: 30px;
+      border-radius: 16px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+      z-index: 999;
+      display: none;
+    }
+
+    .detail-popup.show {
+      display: block;
+      animation: fadeIn 0.5s ease;
+    }
+
+    .close-popup {
+      position: absolute;
+      top: 10px;
+      right: 20px;
+      font-size: 20px;
+      cursor: pointer;
+      color: #ff7675;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translate(-50%, -20%); }
+      to { opacity: 1; transform: translate(-50%, 0); }
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 20px;
+    }
+    table th, table td {
+      padding: 10px;
+      text-align: left;
+      border-bottom: 1px solid #444;
+    }
+    table th {
+      color: #00cec9;
+    }
+  </style>
+</head>
+<body>
+  <button class="toggle-theme" id="themeToggle">🌙</button>
+  <div class="container">
+    <div class="chart-box" id="barChart"><div class="chart-title">Monthly Sales</div></div>
+    <div class="chart-box" id="lineChart"><div class="chart-title">Growth Over Time</div></div>
+    <div class="chart-box" id="pieChart"><div class="chart-title">Category Share</div></div>
+    <div class="chart-box" id="radialChart"><div class="chart-title">Completion Rate</div></div>
+  </div>
+
+  <div class="detail-popup" id="popup">
+    <div class="close-popup" onclick="togglePopup(false)">×</div>
+    <h2>Detailed View</h2>
+    <div id="detailChart" style="height:300px;"></div>
+    <table>
+      <thead><tr><th>Month</th><th>Value</th></tr></thead>
+      <tbody id="dataTable"></tbody>
+    </table>
+  </div>
+
+  <script>
+    const data = [
+      { month: 'Jan', value: 120 }, { month: 'Feb', value: 180 }, { month: 'Mar', value: 150 },
+      { month: 'Apr', value: 200 }, { month: 'May', value: 220 }, { month: 'Jun', value: 300 },
+      { month: 'Jul', value: 250 }, { month: 'Aug', value: 310 }, { month: 'Sep', value: 270 }
+    ];
+
+    const colors = d3.scaleOrdinal(d3.schemeTableau10);
+
+    function animateBars(id, data) {
+      const width = 360, height = 250;
+      const svg = d3.select(`#${id}`).append("svg")
+        .attr("width", width)
+        .attr("height", height);
+
+      const x = d3.scaleBand().domain(data.map(d => d.month)).range([40, width - 10]).padding(0.2);
+      const y = d3.scaleLinear().domain([0, d3.max(data, d => d.value)]).nice().range([height - 40, 10]);
+
+      svg.append("g")
+        .attr("transform", `translate(0, ${height - 40})`)
+        .call(d3.axisBottom(x).tickSizeOuter(0))
+        .selectAll("text").attr("transform", "rotate(-30)").style("text-anchor", "end");
+
+      svg.append("g")
+        .attr("transform", `translate(40, 0)`)
+        .call(d3.axisLeft(y));
+
+      svg.selectAll("rect")
+        .data(data)
+        .enter()
+        .append("rect")
+        .attr("x", d => x(d.month))
+        .attr("y", y(0))
+        .attr("width", x.bandwidth())
+        .attr("height", 0)
+        .attr("fill", (d, i) => colors(i))
+        .transition().duration(1000)
+        .attr("y", d => y(d.value))
+        .attr("height", d => height - 40 - y(d.value));
+
+      svg.selectAll("text.value")
+        .data(data)
+        .enter()
+        .append("text")
+        .attr("class", "value")
+        .attr("x", d => x(d.month) + x.bandwidth() / 2)
+        .attr("y", d => y(d.value) - 10)
+        .attr("text-anchor", "middle")
+        .text(d => d.value)
+        .style("fill", "#fff")
+        .style("font-size", "12px");
+    }
+
+    function simplePie(id, data) {
+      const width = 300, height = 250, radius = Math.min(width, height) / 2 - 10;
+      const svg = d3.select(`#${id}`).append("svg")
+        .attr("width", width)
+        .attr("height", height)
+        .append("g")
+        .attr("transform", `translate(${width / 2}, ${height / 2})`);
+
+      const pie = d3.pie().value(d => d.value);
+      const arc = d3.arc().innerRadius(0).outerRadius(radius);
+      const arcs = pie(data);
+
+      svg.selectAll("path")
+        .data(arcs).enter()
+        .append("path")
+        .attr("d", arc)
+        .attr("fill", (d, i) => colors(i))
+        .style("opacity", 0.7)
+        .transition().duration(1000)
+        .style("opacity", 1);
+
+      svg.selectAll("text")
+        .data(arcs)
+        .enter().append("text")
+        .attr("transform", d => `translate(${arc.centroid(d)})`)
+        .attr("text-anchor", "middle")
+        .text(d => d.data.month);
+    }
+
+    // Expandable container
+    document.querySelectorAll('.chart-box').forEach(el => {
+      el.addEventListener('click', () => {
+        togglePopup(true);
+        drawDetailChart();
+      });
+    });
+
+    function togglePopup(show) {
+      document.getElementById('popup').classList.toggle('show', show);
+    }
+
+    function drawDetailChart() {
+      const container = d3.select("#detailChart");
+      container.selectAll("*").remove();
+      const svg = container.append("svg").attr("width", 750).attr("height", 250);
+      const x = d3.scaleBand().domain(data.map(d => d.month)).range([40, 700]).padding(0.1);
+      const y = d3.scaleLinear().domain([0, d3.max(data, d => d.value)]).range([200, 10]);
+
+      svg.selectAll("rect")
+        .data(data)
+        .enter()
+        .append("rect")
+        .attr("x", d => x(d.month))
+        .attr("y", y(0))
+        .attr("width", x.bandwidth())
+        .attr("height", 0)
+        .attr("fill", (d, i) => colors(i))
+        .transition().duration(1000)
+        .attr("y", d => y(d.value))
+        .attr("height", d => 200 - y(d.value));
+
+      document.getElementById("dataTable").innerHTML = data.map(d => `<tr><td>${d.month}</td><td>${d.value}</td></tr>`).join('');
+    }
+
+    // Toggle theme
+    document.getElementById("themeToggle").addEventListener("click", () => {
+      document.body.classList.toggle("light");
+    });
+
+    // Init
+    animateBars("barChart", data);
+    animateBars("lineChart", data);
+    simplePie("pieChart", data);
+    simplePie("radialChart", data);
+  </script>
+</body>
+</html>
