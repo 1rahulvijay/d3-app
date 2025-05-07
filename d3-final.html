@@ -1,0 +1,808 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Advanced D3.js Dashboard</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        :root {
+            --bg: #f4f6f8;
+            --fg: #1e1e2f;
+            --accent: #5c6bc0;
+            --card: #ffffff;
+            --hover: #e8eaf6;
+        }
+
+        /* Light Theme (default) */
+        body.light-theme {
+            --bg: #f4f6f8;
+            --fg: #1e1e2f;
+            --accent: #5c6bc0;
+            --card: #ffffff;
+            --hover: #e8eaf6;
+        }
+
+        /* Dark Theme */
+        body.dark-theme {
+            --bg: #1e1e2f;
+            --fg: #f4f6f8;
+            --accent: #5c6bc0;
+            --card: #2a2a3d;
+            --hover: #3a3a4d;
+        }
+
+        /* High-Contrast Theme */
+        body.high-contrast-theme {
+            --bg: #000000;
+            --fg: #ffffff;
+            --accent: #ff00ff;
+            --card: #333333;
+            --hover: #555555;
+        }
+
+        /* Pastel Theme */
+        body.pastel-theme {
+            --bg: #f0f4f8;
+            --fg: #4a4e69;
+            --accent: #9a8c98;
+            --card: #ffffff;
+            --hover: #e8ecef;
+        }
+
+        /* Solarized Theme */
+        body.solarized-theme {
+            --bg: #002b36;
+            --fg: #839496;
+            --accent: #268bd2;
+            --card: #073642;
+            --hover: #084552;
+        }
+
+        body {
+            margin: 0;
+            font-family: 'Segoe UI', Arial, sans-serif;
+            background-color: var(--bg);
+            color: var(--fg);
+            transition: background 0.4s, color 0.4s;
+        }
+
+        header {
+            padding: 1rem 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background-color: var(--card);
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+        }
+
+        .theme-toggle {
+            cursor: pointer;
+            background-color: var(--accent);
+            color: white;
+            padding: 0.5rem 1rem;
+            border: none;
+            border-radius: 8px;
+            transition: background 0.3s;
+        }
+
+        .theme-toggle:hover {
+            background-color: #3f51b5;
+        }
+
+        .dashboard {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+            gap: 1.5rem;
+            padding: 2rem;
+        }
+
+        .card {
+            background-color: var(--card);
+            padding: 1.5rem;
+            border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+            position: relative;
+            cursor: pointer;
+        }
+
+        .card:hover {
+            transform: scale(1.03);
+            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.1);
+        }
+
+        .card svg {
+            width: 100%;
+            height: 250px;
+        }
+
+        .chart-title {
+            font-weight: 600;
+            font-size: 1.2rem;
+            margin-bottom: 1rem;
+        }
+
+        .details-container {
+            position: fixed;
+            bottom: -100%;
+            left: 0;
+            width: 100%;
+            background-color: var(--card);
+            color: var(--fg);
+            padding: 2rem;
+            border-top: 4px solid var(--accent);
+            transition: bottom 0.4s ease-in-out;
+            z-index: 1000;
+            max-height: 80vh;
+            overflow-y: auto;
+            animation: subtleFade 2s ease-in-out infinite alternate;
+        }
+
+        .details-container.open {
+            bottom: 0;
+        }
+
+        @keyframes subtleFade {
+            0% {
+                background-color: var(--card);
+            }
+
+            100% {
+                background-color: var(--hover);
+            }
+        }
+
+        .close-details {
+            position: absolute;
+            top: 15px;
+            right: 20px;
+            cursor: pointer;
+            font-size: 2rem;
+            color: #ffffff;
+            background-color: var(--accent);
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background-color 0.3s, transform 0.3s;
+            z-index: 1002;
+        }
+
+        .close-details:hover {
+            background-color: #3f51b5;
+            transform: scale(1.1);
+        }
+
+        .tabs {
+            display: flex;
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .tab {
+            padding: 0.5rem 1rem;
+            cursor: pointer;
+            background-color: var(--hover);
+            border-radius: 8px;
+            transition: background 0.3s;
+        }
+
+        .tab.active {
+            background-color: var(--accent);
+            color: white;
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 1rem;
+        }
+
+        th,
+        td {
+            padding: 0.8rem;
+            text-align: left;
+            border-bottom: 1px solid var(--hover);
+        }
+
+        th {
+            background-color: var(--accent);
+            color: white;
+        }
+
+        .tooltip {
+            position: absolute;
+            background-color: var(--card);
+            color: var(--fg);
+            padding: 0.5rem;
+            border-radius: 4px;
+            font-size: 0.9rem;
+            pointer-events: none;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+            transition: opacity 0.2s;
+        }
+    </style>
+</head>
+
+<body class="light-theme">
+    <header>
+        <h2>📊 Advanced D3.js Dashboard</h2>
+        <button class="theme-toggle" onclick="cycleTheme()">Toggle Theme</button>
+    </header>
+
+    <main class="dashboard">
+        <div class="card" id="line-chart">
+            <div class="chart-title">Revenue Trend</div>
+        </div>
+        <div class="card" id="bar-chart">
+            <div class="chart-title">Sales by Category</div>
+        </div>
+        <div class="card" id="pie-chart">
+            <div class="chart-title">Market Share</div>
+        </div>
+        <div class="card" id="radial-chart">
+            <div class="chart-title">Completion Rate</div>
+        </div>
+        <div class="card" id="funnel-chart">
+            <div class="chart-title">Sales Funnel</div>
+        </div>
+        <div class="card" id="area-chart">
+            <div class="chart-title">User Growth</div>
+        </div>
+        <div class="card" id="scatter-chart">
+            <div class="chart-title">Performance Metrics</div>
+        </div>
+        <div class="card" id="gauge-chart">
+            <div class="chart-title">KPI Score</div>
+        </div>
+    </main>
+
+    <div class="details-container" id="details">
+        <span class="close-details" onclick="closeDetails()">×</span>
+        <div class="tabs">
+            <div class="tab active" onclick="switchTab('overview')">Overview</div>
+            <div class="tab" onclick="switchTab('alt-chart')">Alternate Chart</div>
+            <div class="tab" onclick="switchTab('data-table')">Data Table</div>
+        </div>
+        <div id="overview" class="tab-content active">
+            <h3>Overview</h3>
+            <p id="overview-text">Detailed information will show here...</p>
+        </div>
+        <div id="alt-chart" class="tab-content">
+            <h3>Alternate Visualization</h3>
+            <div id="alt-chart-content" style="height: 300px;"></div>
+        </div>
+        <div id="data-table" class="tab-content">
+            <h3>Data Table</h3>
+            <table id="data-table-content">
+                <thead>
+                    <tr>
+                        <th>Label</th>
+                        <th>Value</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        let currentTheme = 'light-theme';
+
+        // Theme Cycling and Animation Rerun
+        function cycleTheme() {
+            const themes = ['light-theme', 'dark-theme', 'high-contrast-theme', 'pastel-theme', 'solarized-theme'];
+            const currentIndex = themes.indexOf(currentTheme);
+            const nextIndex = (currentIndex + 1) % themes.length;
+            document.body.className = themes[nextIndex];
+            currentTheme = themes[nextIndex];
+
+            // Clear existing charts and re-render to restart animations
+            document.querySelectorAll('.card svg').forEach(svg => svg.remove());
+            drawLineChart();
+            drawBarChart();
+            drawPieChart();
+            drawRadialChart();
+            drawFunnelChart();
+            drawAreaChart();
+            drawScatterChart();
+            drawGaugeChart();
+        }
+
+        // Details Panel
+        function showDetails(data, chartType, overviewText) {
+            const container = document.getElementById("details");
+            const overview = document.getElementById("overview-text");
+            const tableBody = document.getElementById("data-table-content").querySelector("tbody");
+            const altChart = document.getElementById("alt-chart-content");
+
+            // Toggle open state
+            if (container.classList.contains("open")) {
+                container.classList.remove("open");
+                return;
+            }
+
+            // Set overview text
+            overview.textContent = overviewText;
+
+            // Populate data table
+            tableBody.innerHTML = "";
+            data.forEach(d => {
+                const row = document.createElement("tr");
+                const value = typeof d.value === 'string' ? d.value : d.value.toFixed(2);
+                row.innerHTML = `<td>${d.label}</td><td>${value}${d.unit ? d.unit : ''}</td>`;
+                tableBody.appendChild(row);
+            });
+
+            // Draw alternate chart
+            altChart.innerHTML = "";
+            const svg = d3.select("#alt-chart-content").append("svg").attr("width", "100%").attr("height", 300);
+            if (chartType === "line") {
+                drawBarChartAlt(svg, data);
+            } else if (chartType === "bar") {
+                drawLineChartAlt(svg, data);
+            } else if (chartType === "pie") {
+                drawDonutChartAlt(svg, data);
+            } else if (chartType === "area") {
+                drawLineChartAlt(svg, data);
+            } else if (chartType === "scatter") {
+                drawBarChartAlt(svg, data);
+            } else if (chartType === "radial") {
+                drawGaugeChartAlt(svg, data);
+            } else if (chartType === "funnel") {
+                drawBarChartAlt(svg, data);
+            } else if (chartType === "gauge") {
+                drawRadialChartAlt(svg, data);
+            }
+
+            container.classList.add("open");
+        }
+
+        function closeDetails() {
+            document.getElementById("details").classList.remove("open");
+        }
+
+        function switchTab(tabId) {
+            document.querySelectorAll(".tab").forEach(tab => tab.classList.remove("active"));
+            document.querySelectorAll(".tab-content").forEach(content => content.classList.remove("active"));
+            document.querySelector(`[onclick="switchTab('${tabId}')"]`).classList.add("active");
+            document.getElementById(tabId).classList.add("active");
+        }
+
+        // Tooltip Setup
+        const tooltip = d3.select("body").append("div").attr("class", "tooltip").style("opacity", 0);
+
+        // Sample Data
+        const sampleData = [
+            { label: 'Jan', value: 30, unit: 'K' },
+            { label: 'Feb', value: 70, unit: 'K' },
+            { label: 'Mar', value: 45, unit: 'K' },
+            { label: 'Apr', value: 85, unit: 'K' },
+            { label: 'May', value: 60, unit: 'K' }
+        ];
+
+        const scatterData = [
+            { label: 'Product A', value: 50, secondary: 20 },
+            { label: 'Product B', value: 70, secondary: 30 },
+            { label: 'Product C', value: 40, secondary: 25 },
+            { label: 'Product D', value: 90, secondary: 15 },
+            { label: 'Product E', value: 60, secondary: 35 }
+        ];
+
+        const funnelData = [
+            { width: 100, label: "Leads", value: 1000 },
+            { width: 80, label: "Qualified", value: 800 },
+            { width: 60, label: "Proposals", value: 600 },
+            { width: 40, label: "Closed", value: 400 }
+        ];
+
+        // Line Chart
+        function drawLineChart() {
+            const svg = d3.select("#line-chart").append("svg").attr("viewBox", "0 0 350 250");
+            const width = 350, height = 250;
+
+            const x = d3.scalePoint().domain(sampleData.map(d => d.label)).range([40, width - 40]);
+            const y = d3.scaleLinear().domain([0, 100]).range([height - 40, 40]);
+
+            svg.append("g").attr("transform", `translate(0, ${height - 40})`).call(d3.axisBottom(x));
+            svg.append("g").attr("transform", `translate(40, 0)`).call(d3.axisLeft(y));
+
+            const line = d3.line().x(d => x(d.label)).y(d => y(d.value)).curve(d3.curveMonotoneX);
+
+            svg.append("path")
+                .datum(sampleData)
+                .attr("fill", "none")
+                .attr("stroke", "var(--accent)")
+                .attr("stroke-width", 3)
+                .attr("d", line)
+                .attr("stroke-dasharray", function () { return this.getTotalLength(); })
+                .attr("stroke-dashoffset", function () { return this.getTotalLength(); })
+                .transition()
+                .duration(1500)
+                .attr("stroke-dashoffset", 0)
+                .on("end", () => {
+                    svg.selectAll("circle")
+                        .data(sampleData)
+                        .enter()
+                        .append("circle")
+                        .attr("cx", d => x(d.label))
+                        .attr("cy", d => y(d.value))
+                        .attr("r", 5)
+                        .attr("fill", "var(--accent)")
+                        .on("mouseover", (event, d) => {
+                            tooltip.transition().duration(200).style("opacity", 0.9);
+                            tooltip.html(`Month: ${d.label}<br>Revenue: ${d.value}${d.unit}`)
+                                .style("left", (event.pageX + 10) + "px")
+                                .style("top", (event.pageY - 28) + "px");
+                        })
+                        .on("mouseout", () => tooltip.transition().duration(200).style("opacity", 0));
+                });
+
+            svg.on("click", () => showDetails(sampleData, "line", "Revenue trend over the first five months, measured in thousands."));
+        }
+        drawLineChart();
+
+        // Bar Chart
+        function drawBarChart() {
+            const svg = d3.select("#bar-chart").append("svg").attr("viewBox", "0 0 350 250");
+            const width = 350, height = 250;
+
+            const x = d3.scaleBand().domain(sampleData.map(d => d.label)).range([40, width - 40]).padding(0.2);
+            const y = d3.scaleLinear().domain([0, 100]).range([height - 40, 40]);
+
+            svg.append("g").attr("transform", `translate(0, ${height - 40})`).call(d3.axisBottom(x));
+            svg.append("g").attr("transform", `translate(40, 0)`).call(d3.axisLeft(y));
+
+            svg.selectAll("rect")
+                .data(sampleData)
+                .enter()
+                .append("rect")
+                .attr("x", d => x(d.label))
+                .attr("y", d => y(0))
+                .attr("width", x.bandwidth())
+                .attr("height", 0)
+                .attr("fill", "var(--accent)")
+                .on("mouseover", (event, d) => {
+                    tooltip.transition().duration(200).style("opacity", 0.9);
+                    tooltip.html(`Category: ${d.label}<br>Sales: ${d.value}${d.unit}`)
+                        .style("left", (event.pageX + 10) + "px")
+                        .style("top", (event.pageY - 28) + "px");
+                })
+                .on("mouseout", () => tooltip.transition().duration(200).style("opacity", 0))
+                .transition()
+                .duration(1200)
+                .delay((d, i) => i * 150)
+                .attr("y", d => y(d.value))
+                .attr("height", d => height - 40 - y(d.value));
+
+            svg.on("click", () => showDetails(sampleData, "bar", "Sales performance across different product categories, measured in thousands."));
+        }
+        drawBarChart();
+
+        // Pie Chart
+        function drawPieChart() {
+            const svg = d3.select("#pie-chart").append("svg").attr("viewBox", "0 0 300 250");
+            const radius = 100;
+            const g = svg.append("g").attr("transform", `translate(150,125)`);
+
+            const pie = d3.pie().value(d => d.value);
+            const arc = d3.arc().innerRadius(0).outerRadius(radius);
+            const color = d3.scaleOrdinal(d3.schemeTableau10);
+
+            g.selectAll("path")
+                .data(pie(sampleData))
+                .enter()
+                .append("path")
+                .attr("d", arc)
+                .attr("fill", d => color(d.data.label))
+                .attr("opacity", 0)
+                .on("mouseover", (event, d) => {
+                    tooltip.transition().duration(200).style("opacity", 0.9);
+                    tooltip.html(`Segment: ${d.data.label}<br>Share: ${d.data.value}%`)
+                        .style("left", (event.pageX + 10) + "px")
+                        .style("top", (event.pageY - 28) + "px");
+                })
+                .on("mouseout", () => tooltip.transition().duration(200).style("opacity", 0))
+                .transition()
+                .duration(1200)
+                .delay((d, i) => i * 150)
+                .attr("opacity", 1);
+
+            svg.on("click", () => showDetails(sampleData, "pie", "Market share distribution among key competitors, in percentage."));
+        }
+        drawPieChart();
+
+        // Radial Chart
+        function drawRadialChart() {
+            const svg = d3.select("#radial-chart").append("svg").attr("viewBox", "0 0 300 250");
+            const arc = d3.arc().innerRadius(80).outerRadius(100).startAngle(0);
+            const value = 0.7 * Math.PI * 2;
+            const g = svg.append("g").attr("transform", "translate(150,125)");
+
+            g.append("path")
+                .attr("d", arc({ endAngle: 0 }))
+                .attr("fill", "var(--accent)")
+                .transition()
+                .duration(1500)
+                .attrTween("d", () => {
+                    return t => arc({ endAngle: t * value });
+                });
+
+            g.append("text")
+                .attr("text-anchor", "middle")
+                .attr("dy", ".35em")
+                .attr("fill", "var(--fg)")
+                .text("70%");
+
+            svg.on("click", () => showDetails([{ label: "Progress", value: "70%", unit: "" }], "radial", "Completion rate for the current project phase."));
+        }
+        drawRadialChart();
+
+        // Funnel Chart
+        function drawFunnelChart() {
+            const svg = d3.select("#funnel-chart").append("svg").attr("viewBox", "0 0 300 250");
+            funnelData.forEach((step, i) => {
+                const topW = step.width, bottomW = funnelData[i + 1]?.width || 20;
+                const y = i * 50;
+
+                const path = `M${(300 - topW) / 2},${y} 
+                      L${(300 + topW) / 2},${y} 
+                      L${(300 + bottomW) / 2},${y + 40} 
+                      L${(300 - bottomW) / 2},${y + 40} Z`;
+
+                svg.append("path")
+                    .attr("d", path)
+                    .attr("fill", `hsl(${i * 45}, 70%, 60%)`)
+                    .attr("opacity", 0)
+                    .on("mouseover", (event) => {
+                        tooltip.transition().duration(200).style("opacity", 0.9);
+                        tooltip.html(`Stage: ${step.label}<br>Count: ${step.value}`)
+                            .style("left", (event.pageX + 10) + "px")
+                            .style("top", (event.pageY - 28) + "px");
+                    })
+                    .on("mouseout", () => tooltip.transition().duration(200).style("opacity", 0))
+                    .transition()
+                    .duration(1200)
+                    .delay(i * 150)
+                    .attr("opacity", 1);
+            });
+
+            svg.on("click", () => showDetails(funnelData, "funnel", "Sales funnel progression from leads to closed deals."));
+        }
+        drawFunnelChart();
+
+        // Area Chart
+        function drawAreaChart() {
+            const svg = d3.select("#area-chart").append("svg").attr("viewBox", "0 0 350 250");
+            const width = 350, height = 250;
+
+            const x = d3.scalePoint().domain(sampleData.map(d => d.label)).range([40, width - 40]);
+            const y = d3.scaleLinear().domain([0, 100]).range([height - 40, 40]);
+
+            svg.append("g").attr("transform", `translate(0, ${height - 40})`).call(d3.axisBottom(x));
+            svg.append("g").attr("transform", `translate(40, 0)`).call(d3.axisLeft(y));
+
+            const area = d3.area()
+                .x(d => x(d.label))
+                .y0(height - 40)
+                .y1(d => y(d.value))
+                .curve(d3.curveMonotoneX);
+
+            svg.append("path")
+                .datum(sampleData)
+                .attr("fill", "var(--accent)")
+                .attr("opacity", 0.5)
+                .attr("d", area)
+                .attr("stroke", "var(--accent)")
+                .attr("stroke-width", 2)
+                .attr("stroke-dasharray", function () { return this.getTotalLength(); })
+                .attr("stroke-dashoffset", function () { return this.getTotalLength(); })
+                .transition()
+                .duration(1500)
+                .attr("stroke-dashoffset", 0);
+
+            svg.selectAll("circle")
+                .data(sampleData)
+                .enter()
+                .append("circle")
+                .attr("cx", d => x(d.label))
+                .attr("cy", d => y(d.value))
+                .attr("r", 5)
+                .attr("fill", "var(--accent)")
+                .on("mouseover", (event, d) => {
+                    tooltip.transition().duration(200).style("opacity", 0.9);
+                    tooltip.html(`Month: ${d.label}<br>Users: ${d.value}${d.unit}`)
+                        .style("left", (event.pageX + 10) + "px")
+                        .style("top", (event.pageY - 28) + "px");
+                })
+                .on("mouseout", () => tooltip.transition().duration(200).style("opacity", 0));
+
+            svg.on("click", () => showDetails(sampleData, "area", "User growth trend over the first five months, measured in thousands."));
+        }
+        drawAreaChart();
+
+        // Scatter Chart
+        function drawScatterChart() {
+            const svg = d3.select("#scatter-chart").append("svg").attr("viewBox", "0 0 350 250");
+            const width = 350, height = 250;
+
+            const x = d3.scaleLinear().domain([0, 100]).range([40, width - 40]);
+            const y = d3.scaleLinear().domain([0, 40]).range([height - 40, 40]);
+
+            svg.append("g").attr("transform", `translate(0, ${height - 40})`).call(d3.axisBottom(x).ticks(5));
+            svg.append("g").attr("transform", `translate(40, 0)`).call(d3.axisLeft(y).ticks(5));
+
+            svg.selectAll("circle")
+                .data(scatterData)
+                .enter()
+                .append("circle")
+                .attr("cx", d => x(d.value))
+                .attr("cy", d => y(d.secondary))
+                .attr("r", 0)
+                .attr("fill", "var(--accent)")
+                .on("mouseover", (event, d) => {
+                    tooltip.transition().duration(200).style("opacity", 0.9);
+                    tooltip.html(`Product: ${d.label}<br>Primary: ${d.value}<br>Secondary: ${d.secondary}`)
+                        .style("left", (event.pageX + 10) + "px")
+                        .style("top", (event.pageY - 28) + "px");
+                })
+                .on("mouseout", () => tooltip.transition().duration(200).style("opacity", 0))
+                .transition()
+                .duration(1200)
+                .delay((d, i) => i * 150)
+                .attr("r", 8);
+
+            svg.on("click", () => showDetails(scatterData, "scatter", "Performance metrics comparing primary and secondary KPIs."));
+        }
+        drawScatterChart();
+
+        // Gauge Chart
+        function drawGaugeChart() {
+            const svg = d3.select("#gauge-chart").append("svg").attr("viewBox", "0 0 300 250");
+            const arc = d3.arc().innerRadius(80).outerRadius(100).startAngle(-Math.PI / 2);
+            const value = 0.85 * Math.PI;
+            const g = svg.append("g").attr("transform", "translate(150,150)");
+
+            g.append("path")
+                .attr("d", arc({ endAngle: Math.PI / 2 }))
+                .attr("fill", "var(--hover)");
+
+            g.append("path")
+                .attr("d", arc({ endAngle: -Math.PI / 2 }))
+                .attr("fill", "var(--accent)")
+                .transition()
+                .duration(1500)
+                .attrTween("d", () => {
+                    return t => arc({ endAngle: -Math.PI / 2 + t * value });
+                });
+
+            g.append("text")
+                .attr("text-anchor", "middle")
+                .attr("dy", ".35em")
+                .attr("fill", "var(--fg)")
+                .text("85%");
+
+            svg.on("click", () => showDetails([{ label: "KPI Score", value: "85%", unit: "" }], "gauge", "Overall KPI achievement score."));
+        }
+        drawGaugeChart();
+
+        // Alternate Charts
+        function drawLineChartAlt(svg, data) {
+            const width = 400, height = 300;
+            svg.attr("viewBox", `0 0 ${width} ${height}`);
+
+            const x = d3.scalePoint().domain(data.map(d => d.label)).range([40, width - 40]);
+            const y = d3.scaleLinear().domain([0, 100]).range([height - 40, 40]);
+
+            svg.append("g").attr("transform", `translate(0, ${height - 40})`).call(d3.axisBottom(x));
+            svg.append("g").attr("transform", `translate(40, 0)`).call(d3.axisLeft(y));
+
+            const line = d3.line().x(d => x(d.label)).y(d => y(d.value)).curve(d3.curveMonotoneX);
+
+            svg.append("path")
+                .datum(data)
+                .attr("fill", "none")
+                .attr("stroke", "var(--accent)")
+                .attr("stroke-width", 3)
+                .attr("d", line);
+        }
+
+        function drawBarChartAlt(svg, data) {
+            const width = 400, height = 300;
+            svg.attr("viewBox", `0 0 ${width} ${height}`);
+
+            const x = d3.scaleBand().domain(data.map(d => d.label)).range([40, width - 40]).padding(0.2);
+            const y = d3.scaleLinear().domain([0, Math.max(...data.map(d => d.value))]).range([height - 40, 40]);
+
+            svg.append("g").attr("transform", `translate(0, ${height - 40})`).call(d3.axisBottom(x));
+            svg.append("g").attr("transform", `translate(40, 0)`).call(d3.axisLeft(y));
+
+            svg.selectAll("rect")
+                .data(data)
+                .enter()
+                .append("rect")
+                .attr("x", d => x(d.label))
+                .attr("y", d => y(d.value))
+                .attr("width", x.bandwidth())
+                .attr("height", d => height - 40 - y(d.value))
+                .attr("fill", "var(--accent)");
+        }
+
+        function drawDonutChartAlt(svg, data) {
+            const width = 400, height = 300;
+            svg.attr("viewBox", `0 0 ${width} ${height}`);
+            const radius = 100;
+            const g = svg.append("g").attr("transform", `translate(${width / 2}, ${height / 2})`);
+
+            const pie = d3.pie().value(d => d.value);
+            const arc = d3.arc().innerRadius(50).outerRadius(radius);
+            const color = d3.scaleOrdinal(d3.schemeTableau10);
+
+            g.selectAll("path")
+                .data(pie(data))
+                .enter()
+                .append("path")
+                .attr("d", arc)
+                .attr("fill", d => color(d.data.label));
+        }
+
+        function drawGaugeChartAlt(svg, data) {
+            const width = 400, height = 300;
+            svg.attr("viewBox", `0 0 ${width} ${height}`);
+            const arc = d3.arc().innerRadius(80).outerRadius(100).startAngle(-Math.PI / 2);
+            const value = (parseFloat(data[0].value) / 100) * Math.PI;
+            const g = svg.append("g").attr("transform", `translate(${width / 2}, ${height / 2})`);
+
+            g.append("path")
+                .attr("d", arc({ endAngle: Math.PI / 2 }))
+                .attr("fill", "var(--hover)");
+
+            g.append("path")
+                .attr("d", arc({ endAngle: -Math.PI / 2 }))
+                .attr("fill", "var(--accent)")
+                .transition()
+                .duration(1000)
+                .attrTween("d", () => {
+                    return t => arc({ endAngle: -Math.PI / 2 + t * value });
+                });
+
+            g.append("text")
+                .attr("text-anchor", "middle")
+                .attr("dy", ".35em")
+                .attr("fill", "var(--fg)")
+                .text(data[0].value);
+        }
+
+        function drawRadialChartAlt(svg, data) {
+            const width = 400, height = 300;
+            svg.attr("viewBox", `0 0 ${width} ${height}`);
+            const arc = d3.arc().innerRadius(80).outerRadius(100).startAngle(0);
+            const value = (parseFloat(data[0].value) / 100) * Math.PI * 2;
+            const g = svg.append("g").attr("transform", `translate(${width / 2}, ${height / 2})`);
+
+            g.append("path")
+                .attr("d", arc({ endAngle: value }))
+                .attr("fill", "var(--accent)");
+
+            g.append("text")
+                .attr("text-anchor", "middle")
+                .attr("dy", ".35em")
+                .attr("fill", "var(--fg)")
+                .text(data[0].value);
+        }
+    </script>
+</body>
+
+</html>
