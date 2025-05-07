@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Modern D3 Dashboard</title>
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <style>
+    body {
+      margin: 0;
+      font-family: 'Segoe UI', sans-serif;
+      background-color: #f5f7fa;
+      color: #333;
+    }
+
+    .header {
+      padding: 20px;
+      text-align: center;
+      font-size: 28px;
+      background-color: #2d3436;
+      color: white;
+      letter-spacing: 1px;
+    }
+
+    .container {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 20px;
+      padding: 20px;
+    }
+
+    .kpi-box {
+      background-color: white;
+      padding: 20px;
+      border-radius: 12px;
+      box-shadow: 0 4px 8px rgba(0,0,0,0.05);
+      text-align: center;
+      transition: transform 0.2s ease-in-out;
+    }
+
+    .kpi-box:hover {
+      transform: scale(1.03);
+    }
+
+    .kpi-box h3 {
+      font-size: 16px;
+      color: #888;
+      margin-bottom: 5px;
+    }
+
+    .kpi-box .value {
+      font-size: 24px;
+      color: #0984e3;
+      font-weight: bold;
+    }
+
+    .chart-container {
+      background-color: white;
+      border-radius: 12px;
+      padding: 20px;
+      height: 400px;
+      position: relative;
+      box-shadow: 0 4px 8px rgba(0,0,0,0.05);
+    }
+
+    .chart-title {
+      font-size: 18px;
+      margin-bottom: 10px;
+      text-align: center;
+      color: #2d3436;
+    }
+
+    svg {
+      width: 100%;
+      height: 100%;
+    }
+
+    .tooltip {
+      position: absolute;
+      background: rgba(0,0,0,0.7);
+      color: white;
+      padding: 6px 10px;
+      border-radius: 4px;
+      font-size: 14px;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.3s ease;
+    }
+  </style>
+</head>
+<body>
+
+<div class="header">📊 Interactive D3 Dashboard</div>
+
+<div class="container">
+  <div class="kpi-box">
+    <h3>Growth Rate</h3>
+    <div class="value">12.5%</div>
+  </div>
+  <div class="kpi-box">
+    <h3>Active Users</h3>
+    <div class="value">42</div>
+  </div>
+  <div class="kpi-box">
+    <h3>Revenue</h3>
+    <div class="value">$1,000</div>
+  </div>
+</div>
+
+<div class="container">
+  <div class="chart-container" id="lineChart">
+    <div class="chart-title">Monthly Growth (Line Chart)</div>
+  </div>
+  <div class="chart-container" id="barChart">
+    <div class="chart-title">User Count (Bar Chart)</div>
+  </div>
+</div>
+
+<div class="tooltip" id="tooltip"></div>
+
+<script>
+  const data = [
+    { month: 'Jan', value: 40 },
+    { month: 'Feb', value: 60 },
+    { month: 'Mar', value: 80 },
+    { month: 'Apr', value: 100 },
+    { month: 'May', value: 120 },
+    { month: 'Jun', value: 140 }
+  ];
+
+  const tooltip = d3.select("#tooltip");
+
+  function createLineChart(containerId) {
+    const svg = d3.select(`#${containerId}`).append("svg"),
+      width = parseInt(svg.style("width")) - 40,
+      height = parseInt(svg.style("height")) - 40;
+
+    const margin = { top: 20, right: 20, bottom: 30, left: 40 },
+      innerWidth = width - margin.left - margin.right,
+      innerHeight = height - margin.top - margin.bottom;
+
+    const g = svg.append("g").attr("transform", `translate(${margin.left},${margin.top})`);
+
+    const x = d3.scalePoint()
+      .domain(data.map(d => d.month))
+      .range([0, innerWidth]);
+
+    const y = d3.scaleLinear()
+      .domain([0, d3.max(data, d => d.value) + 20])
+      .range([innerHeight, 0]);
+
+    const line = d3.line()
+      .x(d => x(d.month))
+      .y(d => y(d.value))
+      .curve(d3.curveMonotoneX);
+
+    g.append("g").call(d3.axisLeft(y));
+    g.append("g").attr("transform", `translate(0,${innerHeight})`).call(d3.axisBottom(x));
+
+    g.append("path")
+      .datum(data)
+      .attr("fill", "none")
+      .attr("stroke", "#0984e3")
+      .attr("stroke-width", 3)
+      .attr("d", line)
+      .attr("stroke-dasharray", function () { return this.getTotalLength(); })
+      .attr("stroke-dashoffset", function () { return this.getTotalLength(); })
+      .transition()
+      .duration(2000)
+      .ease(d3.easeCubic)
+      .attr("stroke-dashoffset", 0);
+
+    g.selectAll("circle")
+      .data(data)
+      .enter()
+      .append("circle")
+      .attr("cx", d => x(d.month))
+      .attr("cy", d => y(d.value))
+      .attr("r", 0)
+      .attr("fill", "#00cec9")
+      .on("mouseover", (event, d) => {
+        tooltip.style("opacity", 1)
+          .html(`${d.month}: ${d.value}`)
+          .style("left", event.pageX + "px")
+          .style("top", (event.pageY - 28) + "px");
+      })
+      .on("mouseout", () => tooltip.style("opacity", 0))
+      .transition()
+      .duration(1000)
+      .attr("r", 5);
+  }
+
+  function createBarChart(containerId) {
+    const svg = d3.select(`#${containerId}`).append("svg"),
+      width = parseInt(svg.style("width")) - 40,
+      height = parseInt(svg.style("height")) - 40;
+
+    const margin = { top: 20, right: 20, bottom: 30, left: 40 },
+      innerWidth = width - margin.left - margin.right,
+      innerHeight = height - margin.top - margin.bottom;
+
+    const g = svg.append("g").attr("transform", `translate(${margin.left},${margin.top})`);
+
+    const x = d3.scaleBand()
+      .domain(data.map(d => d.month))
+      .range([0, innerWidth])
+      .padding(0.2);
+
+    const y = d3.scaleLinear()
+      .domain([0, d3.max(data, d => d.value) + 20])
+      .range([innerHeight, 0]);
+
+    g.append("g").call(d3.axisLeft(y));
+    g.append("g").attr("transform", `translate(0,${innerHeight})`).call(d3.axisBottom(x));
+
+    g.selectAll(".bar")
+      .data(data)
+      .enter()
+      .append("rect")
+      .attr("class", "bar")
+      .attr("x", d => x(d.month))
+      .attr("y", innerHeight)
+      .attr("width", x.bandwidth())
+      .attr("height", 0)
+      .attr("fill", "#6c5ce7")
+      .on("mouseover", (event, d) => {
+        tooltip.style("opacity", 1)
+          .html(`${d.month}: ${d.value}`)
+          .style("left", event.pageX + "px")
+          .style("top", (event.pageY - 28) + "px");
+      })
+      .on("mouseout", () => tooltip.style("opacity", 0))
+      .transition()
+      .duration(1200)
+      .attr("y", d => y(d.value))
+      .attr("height", d => innerHeight - y(d.value));
+  }
+
+  createLineChart("lineChart");
+  createBarChart("barChart");
+</script>
+</body>
+</html>
