@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Advanced D3 Dashboard</title>
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <style>
+    body {
+      margin: 0;
+      font-family: 'Segoe UI', sans-serif;
+      background-color: #1e1e2f;
+      color: #f0f0f0;
+      transition: background-color 0.3s, color 0.3s;
+    }
+
+    .toggle-theme {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      background: #ffcc00;
+      border: none;
+      padding: 10px 15px;
+      cursor: pointer;
+      font-size: 18px;
+      border-radius: 8px;
+    }
+
+    .dashboard {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+      gap: 20px;
+      padding: 20px;
+    }
+
+    .chart-card {
+      background-color: #2b2b3c;
+      padding: 20px;
+      border-radius: 16px;
+      position: relative;
+      transition: transform 0.3s;
+    }
+
+    .chart-card:hover {
+      transform: scale(1.02);
+      cursor: pointer;
+    }
+
+    .chart-title {
+      font-size: 20px;
+      margin-bottom: 15px;
+      text-align: center;
+      color: #ffd700;
+    }
+
+    svg text {
+      font-size: 14px;
+      fill: #fff;
+      pointer-events: none;
+    }
+
+    .details-container {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      background: rgba(0, 0, 0, 0.85);
+      color: #fff;
+      overflow-y: auto;
+      display: none;
+      padding: 40px;
+      z-index: 1000;
+    }
+
+    .details-close {
+      position: absolute;
+      top: 20px;
+      right: 20px;
+      font-size: 24px;
+      cursor: pointer;
+    }
+
+    .light-mode {
+      background-color: #f9f9f9;
+      color: #111;
+    }
+
+    .light-mode .chart-card {
+      background-color: #ffffff;
+      color: #000;
+    }
+
+    .light-mode svg text {
+      fill: #111;
+    }
+
+    .light-mode .chart-title {
+      color: #222;
+    }
+  </style>
+</head>
+<body>
+  <button class="toggle-theme">🌙</button>
+  <div class="dashboard">
+    <div class="chart-card" id="barChart">
+      <div class="chart-title">Bar Chart</div>
+    </div>
+    <div class="chart-card" id="lineChart">
+      <div class="chart-title">Line Chart</div>
+    </div>
+    <div class="chart-card" id="pieChart">
+      <div class="chart-title">Pie Chart</div>
+    </div>
+    <div class="chart-card" id="radialChart">
+      <div class="chart-title">Radial Progress</div>
+    </div>
+  </div>
+  <div class="details-container" id="detailContainer">
+    <div class="details-close" onclick="document.getElementById('detailContainer').style.display='none'">&times;</div>
+    <h2>Details</h2>
+    <p>This section shows detailed information when a chart is clicked. You can scroll through this content if it overflows.</p>
+    <p>Lorem ipsum dolor sit amet, consectetur adipiscing elit. Proin id nunc eget neque dictum rutrum vitae non magna...</p>
+    <p style="height: 1000px;">Scroll for more details...</p>
+  </div>
+
+  <script>
+    const data = [
+      { name: 'Jan', value: 30 },
+      { name: 'Feb', value: 50 },
+      { name: 'Mar', value: 80 },
+      { name: 'Apr', value: 65 },
+      { name: 'May', value: 95 },
+    ];
+
+    const width = 360, height = 240, margin = 40;
+
+    function openDetails() {
+      document.getElementById('detailContainer').style.display = 'block';
+    }
+
+    function barChart() {
+      const svg = d3.select("#barChart").append("svg")
+        .attr("width", width).attr("height", height);
+
+      const x = d3.scaleBand().domain(data.map(d => d.name)).range([margin, width - margin]).padding(0.2);
+      const y = d3.scaleLinear().domain([0, d3.max(data, d => d.value)]).range([height - margin, margin]);
+
+      svg.selectAll("rect")
+        .data(data)
+        .enter()
+        .append("rect")
+        .attr("x", d => x(d.name))
+        .attr("y", height - margin)
+        .attr("width", x.bandwidth())
+        .attr("height", 0)
+        .attr("fill", "#00bcd4")
+        .transition().duration(1000)
+        .attr("y", d => y(d.value))
+        .attr("height", d => height - margin - y(d.value));
+
+      svg.selectAll("text.label")
+        .data(data)
+        .enter()
+        .append("text")
+        .attr("class", "label")
+        .attr("x", d => x(d.name) + x.bandwidth() / 2)
+        .attr("y", d => y(d.value) - 5)
+        .attr("text-anchor", "middle")
+        .text(d => d.value);
+    }
+
+    function lineChart() {
+      const svg = d3.select("#lineChart").append("svg")
+        .attr("width", width).attr("height", height);
+
+      const x = d3.scalePoint().domain(data.map(d => d.name)).range([margin, width - margin]);
+      const y = d3.scaleLinear().domain([0, d3.max(data, d => d.value)]).range([height - margin, margin]);
+
+      const line = d3.line()
+        .x(d => x(d.name))
+        .y(d => y(d.value));
+
+      svg.append("path")
+        .datum(data)
+        .attr("fill", "none")
+        .attr("stroke", "#ff9800")
+        .attr("stroke-width", 3)
+        .attr("d", line)
+        .attr("stroke-dasharray", function () { return this.getTotalLength(); })
+        .attr("stroke-dashoffset", function () { return this.getTotalLength(); })
+        .transition().duration(2000).attr("stroke-dashoffset", 0);
+
+      svg.selectAll("circle")
+        .data(data)
+        .enter()
+        .append("circle")
+        .attr("cx", d => x(d.name))
+        .attr("cy", d => y(d.value))
+        .attr("r", 0)
+        .attr("fill", "#ff9800")
+        .transition().duration(1500)
+        .attr("r", 5);
+
+      svg.selectAll("text.label")
+        .data(data)
+        .enter()
+        .append("text")
+        .attr("x", d => x(d.name))
+        .attr("y", d => y(d.value) - 10)
+        .attr("text-anchor", "middle")
+        .text(d => d.value);
+    }
+
+    function pieChart() {
+      const radius = Math.min(width, height) / 2 - margin;
+      const svg = d3.select("#pieChart").append("svg")
+        .attr("width", width).attr("height", height)
+        .append("g")
+        .attr("transform", `translate(${width / 2}, ${height / 2})`);
+
+      const pie = d3.pie().value(d => d.value);
+      const arc = d3.arc().innerRadius(0).outerRadius(radius);
+      const color = d3.scaleOrdinal(d3.schemeCategory10);
+
+      const arcs = svg.selectAll("arc")
+        .data(pie(data))
+        .enter().append("g");
+
+      arcs.append("path")
+        .attr("d", arc)
+        .attr("fill", d => color(d.data.name))
+        .transition().duration(1500)
+        .attrTween("d", function(d) {
+          const i = d3.interpolate({ startAngle: 0, endAngle: 0 }, d);
+          return t => arc(i(t));
+        });
+
+      arcs.append("text")
+        .attr("transform", d => `translate(${arc.centroid(d)})`)
+        .attr("text-anchor", "middle")
+        .text(d => d.data.name);
+    }
+
+    function radialChart() {
+      const svg = d3.select("#radialChart").append("svg")
+        .attr("width", width).attr("height", height);
+      const arc = d3.arc().innerRadius(60).outerRadius(100).startAngle(0);
+      const g = svg.append("g").attr("transform", `translate(${width / 2}, ${height / 2})`);
+
+      g.append("path")
+        .datum({ endAngle: Math.PI * 2 })
+        .attr("fill", "#555")
+        .attr("d", arc);
+
+      const foreground = g.append("path")
+        .datum({ endAngle: 0 })
+        .attr("fill", "#76ff03")
+        .attr("d", arc);
+
+      foreground.transition()
+        .duration(2000)
+        .attrTween("d", function (d) {
+          const i = d3.interpolate(d.endAngle, Math.PI * 1.5);
+          return function (t) {
+            d.endAngle = i(t);
+            return arc(d);
+          };
+        });
+
+      g.append("text")
+        .text("75%")
+        .attr("text-anchor", "middle")
+        .attr("dy", ".35em")
+        .style("font-size", "24px");
+    }
+
+    document.querySelectorAll(".chart-card").forEach(el => {
+      el.addEventListener("click", openDetails);
+    });
+
+    document.querySelector(".toggle-theme").addEventListener("click", () => {
+      document.body.classList.toggle("light-mode");
+    });
+
+    barChart();
+    lineChart();
+    pieChart();
+    radialChart();
+  </script>
+</body>
+</html>
