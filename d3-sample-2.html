@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Advanced D3.js Dashboard</title>
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <style>
+    :root {
+      --bg: #f4f6f8;
+      --fg: #1e1e2f;
+      --accent: #5c6bc0;
+      --card: #ffffff;
+    }
+
+    body.dark-mode {
+      --bg: #1e1e2f;
+      --fg: #f4f6f8;
+      --accent: #5c6bc0;
+      --card: #2a2a3d;
+    }
+
+    body {
+      margin: 0;
+      font-family: 'Segoe UI', sans-serif;
+      background-color: var(--bg);
+      color: var(--fg);
+      transition: background 0.4s, color 0.4s;
+    }
+
+    header {
+      padding: 1rem 2rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background-color: var(--card);
+      box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+    }
+
+    .toggle-theme {
+      cursor: pointer;
+      background-color: var(--accent);
+      color: white;
+      padding: 0.5rem 1rem;
+      border: none;
+      border-radius: 8px;
+    }
+
+    .dashboard {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+      gap: 1.5rem;
+      padding: 2rem;
+    }
+
+    .card {
+      background-color: var(--card);
+      padding: 1rem;
+      border-radius: 12px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+      transition: transform 0.3s ease;
+      position: relative;
+    }
+
+    .card:hover {
+      transform: scale(1.02);
+    }
+
+    .card svg {
+      width: 100%;
+      height: 300px;
+    }
+
+    .chart-title {
+      font-weight: bold;
+      margin-bottom: 1rem;
+    }
+
+    .details-container {
+      position: fixed;
+      bottom: -100%;
+      left: 0;
+      width: 100%;
+      background-color: var(--card);
+      color: var(--fg);
+      padding: 2rem;
+      border-top: 4px solid var(--accent);
+      transition: bottom 0.4s;
+      z-index: 1000;
+    }
+
+    .details-container.open {
+      bottom: 0;
+    }
+
+    .close-details {
+      position: absolute;
+      top: 10px;
+      right: 20px;
+      cursor: pointer;
+      font-size: 1.5rem;
+      color: var(--accent);
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h2>📊 D3.js Advanced Dashboard</h2>
+    <button class="toggle-theme">🌙 Toggle Theme</button>
+  </header>
+
+  <main class="dashboard">
+    <div class="card" id="line-chart">
+      <div class="chart-title">Line Chart</div>
+    </div>
+    <div class="card" id="bar-chart">
+      <div class="chart-title">Bar Chart</div>
+    </div>
+    <div class="card" id="pie-chart">
+      <div class="chart-title">Pie Chart</div>
+    </div>
+    <div class="card" id="radial-chart">
+      <div class="chart-title">Radial Progress</div>
+    </div>
+    <div class="card" id="funnel-chart">
+      <div class="chart-title">Funnel Chart</div>
+    </div>
+  </main>
+
+  <div class="details-container" id="details">
+    <span class="close-details" onclick="document.getElementById('details').classList.remove('open')">&times;</span>
+    <div id="details-content">Detailed data will show here...</div>
+  </div>
+
+  <script>
+    document.querySelector(".toggle-theme").addEventListener("click", () => {
+      document.body.classList.toggle("dark-mode");
+    });
+
+    function showDetails(data) {
+      const container = document.getElementById("details");
+      const content = document.getElementById("details-content");
+      content.innerHTML = `<pre>${JSON.stringify(data, null, 2)}</pre>`;
+      container.classList.add("open");
+    }
+
+    const sampleData = [
+      { label: 'A', value: 30 },
+      { label: 'B', value: 70 },
+      { label: 'C', value: 45 },
+      { label: 'D', value: 85 },
+      { label: 'E', value: 60 }
+    ];
+
+    // Line Chart
+    (function drawLineChart() {
+      const svg = d3.select("#line-chart").append("svg");
+      const width = 400, height = 300;
+
+      svg.attr("viewBox", `0 0 ${width} ${height}`);
+
+      const x = d3.scalePoint().domain(sampleData.map(d => d.label)).range([40, width - 40]);
+      const y = d3.scaleLinear().domain([0, 100]).range([height - 40, 40]);
+
+      const line = d3.line()
+        .x(d => x(d.label))
+        .y(d => y(d.value))
+        .curve(d3.curveMonotoneX);
+
+      svg.append("path")
+        .datum(sampleData)
+        .attr("fill", "none")
+        .attr("stroke", "var(--accent)")
+        .attr("stroke-width", 3)
+        .attr("d", line)
+        .on("click", () => showDetails(sampleData));
+    })();
+
+    // Bar Chart
+    (function drawBarChart() {
+      const svg = d3.select("#bar-chart").append("svg");
+      const width = 400, height = 300;
+
+      svg.attr("viewBox", `0 0 ${width} ${height}`);
+
+      const x = d3.scaleBand().domain(sampleData.map(d => d.label)).range([40, width - 40]).padding(0.2);
+      const y = d3.scaleLinear().domain([0, 100]).range([height - 40, 40]);
+
+      svg.selectAll("rect")
+        .data(sampleData)
+        .enter()
+        .append("rect")
+        .attr("x", d => x(d.label))
+        .attr("y", d => y(0))
+        .attr("width", x.bandwidth())
+        .attr("height", 0)
+        .attr("fill", "var(--accent)")
+        .transition()
+        .duration(800)
+        .delay((d, i) => i * 100)
+        .attr("y", d => y(d.value))
+        .attr("height", d => height - 40 - y(d.value));
+
+      svg.on("click", () => showDetails(sampleData));
+    })();
+
+    // Pie Chart
+    (function drawPieChart() {
+      const svg = d3.select("#pie-chart").append("svg").attr("viewBox", "0 0 300 300");
+      const radius = 120;
+      const g = svg.append("g").attr("transform", `translate(150,150)`);
+
+      const pie = d3.pie().value(d => d.value);
+      const arc = d3.arc().innerRadius(0).outerRadius(radius);
+      const color = d3.scaleOrdinal(d3.schemeTableau10);
+
+      g.selectAll("path")
+        .data(pie(sampleData))
+        .enter()
+        .append("path")
+        .attr("d", arc)
+        .attr("fill", d => color(d.data.label))
+        .on("click", () => showDetails(sampleData));
+    })();
+
+    // Radial Chart
+    (function drawRadialChart() {
+      const svg = d3.select("#radial-chart").append("svg").attr("viewBox", "0 0 300 300");
+      const arc = d3.arc().innerRadius(100).outerRadius(140).startAngle(0);
+      const value = 0.7 * Math.PI * 2;
+      const g = svg.append("g").attr("transform", "translate(150,150)");
+
+      g.append("path")
+        .attr("d", arc({ endAngle: value }))
+        .attr("fill", "var(--accent)")
+        .on("click", () => showDetails({ radialProgress: "70%" }));
+    })();
+
+    // Funnel Chart (as stacked trapezoids)
+    (function drawFunnelChart() {
+      const svg = d3.select("#funnel-chart").append("svg").attr("viewBox", "0 0 300 300");
+      const steps = [100, 80, 60, 40];
+
+      steps.forEach((w, i) => {
+        const topW = w, bottomW = steps[i + 1] || 20;
+        const y = i * 60;
+
+        const path = `M${(300 - topW) / 2},${y} 
+                      L${(300 + topW) / 2},${y} 
+                      L${(300 + bottomW) / 2},${y + 50} 
+                      L${(300 - bottomW) / 2},${y + 50} Z`;
+
+        svg.append("path")
+          .attr("d", path)
+          .attr("fill", `hsl(${i * 45}, 70%, 60%)`)
+          .on("click", () => showDetails({ funnelStep: i + 1, width: w }));
+      });
+    })();
+  </script>
+</body>
+</html>
