@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Interactive Dashboard</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <nav class="navbar">
+    <div class="nav-container">
+      <div class="nav-logo">My Dashboard</div>
+      <ul class="nav-tabs">
+        <li><a href="risk.html">Risk</a></li>
+        <li><a href="management.html">Management</a></li>
+        <li><a href="productivity.html">Productivity</a></li>
+        <li><a href="fte.html">FTE</a></li>
+        <li><a href="details.html">Details</a></li>
+      </ul>
+    </div>
+  </nav>
+
+  <main class="content">
+    <h2>Welcome to the Dashboard</h2>
+    <p>Select a tab to view the charts.</p>
+  </main>
+</body>
+</html>
