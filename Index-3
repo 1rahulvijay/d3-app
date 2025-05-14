@@ -8,151 +8,170 @@ const drawScatterChart = (container, data, title, colorTF, colorOCM) => {
             .text('No data available');
         return;
     }
-    const { width, height, fontScale } = getResponsiveDimensions(container);
-    const svg = d3.select(container).append('svg')
-        .attr('viewBox', `0 0 ${width} ${height}`)
-        .style('font-size', `${12 * fontScale}px`);
-    const { margin } = chartConfig;
-    const x = d3.scalePoint().domain(data.map(d => d.label)).range([margin.left, width - margin.right]);
-    const maxValue = Math.max(d3.max(data, d => d.total_tf || 0), d3.max(data, d => d.ocm_overall || 0)) * 1.2; // e.g., 4.32
-    const yTF = d3.scaleLinear().domain([0, maxValue]).range([height - margin.bottom, margin.top]); // No .nice()
-    const yOCM = d3.scaleLinear().domain([0, maxValue]).range([height - margin.bottom, margin.top]); // No .nice(), synced with yTF
-    const ocmOffset = 20; // Pixel offset to shift OCM Overall line and dots down to prevent overlap
 
-    createChartBase(svg, width, height, x, yTF, fontScale);
-    svg.append('g')
-        .attr('class', 'y-axis')
-        .attr('transform', `translate(${width - margin.right}, 0)`)
-        .call(d3.axisRight(yOCM).ticks(5).tickFormat(d => d.toFixed(1))) // Shows exact values, e.g., 0, 1.1, 2.2, 3.2, 4.3
-        .selectAll('text')
-        .attr('fill', colorOCM)
-        .style('font-size', `${10 * fontScale}px`)
-        .selectAll('line, path')
-        .attr('stroke', colorOCM)
-        .attr('stroke-width', 0.8)
-        .attr('stroke-opacity', 0.7);
+    // Function to update chart on resize
+    const updateChart = () => {
+        const { width, height, fontScale } = getResponsiveDimensions(container);
+        d3.select(container).select('svg').remove(); // Clear existing SVG
+        const svg = d3.select(container).append('svg')
+            .attr('viewBox', `0 0 ${width} ${height}`)
+            .style('font-size', `${12 * fontScale}px`);
+        const { margin } = chartConfig;
+        const x = d3.scalePoint().domain(data.map(d => d.label)).range([margin.left, width - margin.right]);
 
-    createEffects(svg);
+        // Calculate max values without rounding
+        const maxTF = d3.max(data, d => d.total_tf || 0) * 1.2; // e.g., 4.32
+        const maxOCM = d3.max(data, d => d.ocm_overall || 0) * 1.2; // e.g., 1.92
+        const maxDomain = Math.max(maxTF, maxOCM); // Shared upper bound for sync
 
-    const lineTF = d3.line().x(d => x(d.label)).y(d => yTF(d.total_tf || 0)).curve(d3.curveMonotoneX);
-    const lineOCM = d3.line().x(d => x(d.label)).y(d => yOCM(d.ocm_overall || 0) + ocmOffset).curve(d3.curveMonotoneX); // Apply offset
+        const yTF = d3.scaleLinear().domain([0, maxDomain]).range([height - margin.bottom, margin.top]); // No .nice()
+        const yOCM = d3.scaleLinear().domain([0, maxDomain]).range([height - margin.bottom, margin.top]); // Synced range
 
-    const tfLine = svg.append('path')
-        .datum(data)
-        .attr('class', 'tf-line')
-        .attr('stroke', colorTF)
-        .attr('stroke-width', 2.5)
-        .attr('opacity', 0.9)
-        .attr('fill', 'none')
-        .attr('d', lineTF)
-        .attr('stroke-dasharray', function () { return this.getTotalLength(); })
-        .attr('stroke-dashoffset', function () { return this.getTotalLength(); })
-        .transition()
-        .duration(chartConfig.animationDuration)
-        .ease(d3.easeLinear)
-        .attr('stroke-dashoffset', 0);
+        // Dynamic offset as a fraction of chart height to prevent overlap
+        const heightRange = height - margin.bottom - margin.top;
+        const ocmOffset = heightRange * 0.1; // 10% of chart height as dynamic offset
 
-    const ocmLine = svg.append('path')
-        .datum(data)
-        .attr('class', 'ocm-line')
-        .attr('stroke', colorOCM)
-        .attr('stroke-width', 2.5)
-        .attr('opacity', 0.9)
-        .attr('fill', 'none')
-        .attr('d', lineOCM)
-        .attr('stroke-dasharray', function () { return this.getTotalLength(); })
-        .attr('stroke-dashoffset', function () { return this.getTotalLength(); })
-        .transition()
-        .duration(chartConfig.animationDuration)
-        .ease(d3.easeLinear)
-        .attr('stroke-dashoffset', 0);
+        createChartBase(svg, width, height, x, yTF, fontScale);
+        svg.append('g')
+            .attr('class', 'y-axis')
+            .attr('transform', `translate(${width - margin.right}, 0)`)
+            .call(d3.axisRight(yOCM).ticks(5).tickFormat(d => d.toFixed(1))) // Exact values
+            .selectAll('text')
+            .attr('fill', colorOCM)
+            .style('font-size', `${10 * fontScale}px`)
+            .selectAll('line, path')
+            .attr('stroke', colorOCM)
+            .attr('stroke-width', 0.8)
+            .attr('stroke-opacity', 0.7);
 
-    const tfDots = svg.selectAll('.dot-tf')
-        .data(data)
-        .enter()
-        .append('circle')
-        .attr('class', 'dot-tf')
-        .attr('cx', d => x(d.label) - 5)
-        .attr('cy', d => yTF(d.total_tf || 0)) // Exact position at 3.6
-        .attr('r', 0)
-        .attr('fill', colorTF)
-        .attr('stroke', '#fff')
-        .attr('stroke-width', 2)
-        .attr('opacity', 0)
-        .style('cursor', 'pointer')
-        .attr('filter', 'url(#glow)')
-        .on('mouseover', (event, d) => {
-            const tooltipWidth = d3.select('.tooltip').node()?.offsetWidth || 200;
-            const xPos = Math.min(event.pageX + 10, window.innerWidth - tooltipWidth - 20);
-            d3.select('.tooltip').style('display', 'block')
-                .html(`<b>${d.label}</b><br>Total TF: ${d.total_tf?.toFixed(1) || 'N/A'}`)
-                .style('left', `${xPos}px`)
-                .style('top', `${Math.max(event.pageY - 40, 20)}px`)
-                .transition()
-                .duration(200)
-                .ease(d3.easeElastic)
-                .style('opacity', 0.9);
-        })
-        .on('mouseout', () => d3.select('.tooltip').transition().duration(300).ease(d3.easeElastic).style('opacity', 0)
-            .on('end', () => d3.select('.tooltip').style('display', 'none')))
-        .transition()
-        .duration(chartConfig.animationDuration / 2)
-        .delay((d, i) => i * 300)
-        .ease(d3.easeElastic)
-        .attr('opacity', 1)
-        .attr('r', 5);
+        createEffects(svg);
 
-    const ocmDots = svg.selectAll('.dot-ocm')
-        .data(data)
-        .enter()
-        .append('circle')
-        .attr('class', 'dot-ocm')
-        .attr('cx', d => x(d.label) + 5)
-        .attr('cy', d => yOCM(d.ocm_overall || 0) + ocmOffset) // Exact position at 1.6 with offset
-        .attr('r', 0)
-        .attr('fill', colorOCM)
-        .attr('stroke', '#fff')
-        .attr('stroke-width', 2)
-        .attr('opacity', 0)
-        .style('cursor', 'pointer')
-        .attr('filter', 'url(#glow)')
-        .on('mouseover', (event, d) => {
-            const tooltipWidth = d3.select('.tooltip').node()?.offsetWidth || 200;
-            const xPos = Math.min(event.pageX + 10, window.innerWidth - tooltipWidth - 20);
-            d3.select('.tooltip').style('display', 'block')
-                .html(`<b>${d.label}</b><br>OCM Overall: ${d.ocm_overall?.toFixed(1) || 'N/A'}`)
-                .style('left', `${xPos}px`)
-                .style('top', `${Math.max(event.pageY - 40, 20)}px`)
-                .transition()
-                .duration(200)
-                .ease(d3.easeElastic)
-                .style('opacity', 0.9);
-        })
-        .on('mouseout', () => d3.select('.tooltip').transition().duration(300).ease(d3.easeElastic).style('opacity', 0)
-            .on('end', () => d3.select('.tooltip').style('display', 'none')))
-        .transition()
-        .duration(chartConfig.animationDuration / 2)
-        .delay((d, i) => i * 300)
-        .ease(d3.easeElastic)
-        .attr('opacity', 1)
-        .attr('r', 5);
+        const lineTF = d3.line().x(d => x(d.label)).y(d => yTF(d.total_tf || 0)).curve(d3.curveMonotoneX);
+        const lineOCM = d3.line().x(d => x(d.label)).y(d => yOCM(d.ocm_overall || 0) + ocmOffset).curve(d3.curveMonotoneX); // Dynamic offset
 
-    let tfVisible = true, ocmVisible = true;
-    const { tfLegend, ocmLegend } = createScatterLegend(svg, width, [colorTF, colorOCM], fontScale);
+        const tfLine = svg.append('path')
+            .datum(data)
+            .attr('class', 'tf-line')
+            .attr('stroke', colorTF)
+            .attr('stroke-width', 2.5)
+            .attr('opacity', 0.9)
+            .attr('fill', 'none')
+            .attr('d', lineTF)
+            .attr('stroke-dasharray', function () { return this.getTotalLength(); })
+            .attr('stroke-dashoffset', function () { return this.getTotalLength(); })
+            .transition()
+            .duration(chartConfig.animationDuration)
+            .ease(d3.easeLinear)
+            .attr('stroke-dashoffset', 0);
 
-    tfLegend.on('click', () => {
-        tfVisible = !tfVisible;
-        tfLine.attr('opacity', tfVisible ? 1 : 0);
-        tfDots.attr('opacity', tfVisible ? 1 : 0);
-        tfLegend.select('rect').attr('opacity', tfVisible ? 1 : 0.3);
-    });
+        const ocmLine = svg.append('path')
+            .datum(data)
+            .attr('class', 'ocm-line')
+            .attr('stroke', colorOCM)
+            .attr('stroke-width', 2.5)
+            .attr('opacity', 0.9)
+            .attr('fill', 'none')
+            .attr('d', lineOCM)
+            .attr('stroke-dasharray', function () { return this.getTotalLength(); })
+            .attr('stroke-dashoffset', function () { return this.getTotalLength(); })
+            .transition()
+            .duration(chartConfig.animationDuration)
+            .ease(d3.easeLinear)
+            .attr('stroke-dashoffset', 0);
 
-    ocmLegend.on('click', () => {
-        ocmVisible = !ocmVisible;
-        ocmLine.attr('opacity', ocmVisible ? 1 : 0);
-        ocmDots.attr('opacity', ocmVisible ? 1 : 0);
-        ocmLegend.select('rect').attr('opacity', ocmVisible ? 1 : 0.3);
-    });
+        const tfDots = svg.selectAll('.dot-tf')
+            .data(data)
+            .enter()
+            .append('circle')
+            .attr('class', 'dot-tf')
+            .attr('cx', d => x(d.label) - 5)
+            .attr('cy', d => yTF(d.total_tf || 0)) // Exact position at 3.6
+            .attr('r', 0)
+            .attr('fill', colorTF)
+            .attr('stroke', '#fff')
+            .attr('stroke-width', 2)
+            .attr('opacity', 0)
+            .style('cursor', 'pointer')
+            .attr('filter', 'url(#glow)')
+            .on('mouseover', (event, d) => {
+                const tooltipWidth = d3.select('.tooltip').node()?.offsetWidth || 200;
+                const xPos = Math.min(event.pageX + 10, window.innerWidth - tooltipWidth - 20);
+                d3.select('.tooltip').style('display', 'block')
+                    .html(`<b>${d.label}</b><br>Total TF: ${d.total_tf?.toFixed(1) || 'N/A'}`)
+                    .style('left', `${xPos}px`)
+                    .style('top', `${Math.max(event.pageY - 40, 20)}px`)
+                    .transition()
+                    .duration(200)
+                    .ease(d3.easeElastic)
+                    .style('opacity', 0.9);
+            })
+            .on('mouseout', () => d3.select('.tooltip').transition().duration(300).ease(d3.easeElastic).style('opacity', 0)
+                .on('end', () => d3.select('.tooltip').style('display', 'none')))
+            .transition()
+            .duration(chartConfig.animationDuration / 2)
+            .delay((d, i) => i * 300)
+            .ease(d3.easeElastic)
+            .attr('opacity', 1)
+            .attr('r', 5);
 
-    svg.on('click', () => showDetails(data, 'scatter', `Distribution of ${title} over time.`));
+        const ocmDots = svg.selectAll('.dot-ocm')
+            .data(data)
+            .enter()
+            .append('circle')
+            .attr('class', 'dot-ocm')
+            .attr('cx', d => x(d.label) + 5)
+            .attr('cy', d => yOCM(d.ocm_overall || 0) + ocmOffset) // Exact position at 1.6 with dynamic offset
+            .attr('r', 0)
+            .attr('fill', colorOCM)
+            .attr('stroke', '#fff')
+            .attr('stroke-width', 2)
+            .attr('opacity', 0)
+            .style('cursor', 'pointer')
+            .attr('filter', 'url(#glow)')
+            .on('mouseover', (event, d) => {
+                const tooltipWidth = d3.select('.tooltip').node()?.offsetWidth || 200;
+                const xPos = Math.min(event.pageX + 10, window.innerWidth - tooltipWidth - 20);
+                d3.select('.tooltip').style('display', 'block')
+                    .html(`<b>${d.label}</b><br>OCM Overall: ${d.ocm_overall?.toFixed(1) || 'N/A'}`)
+                    .style('left', `${xPos}px`)
+                    .style('top', `${Math.max(event.pageY - 40, 20)}px`)
+                    .transition()
+                    .duration(200)
+                    .ease(d3.easeElastic)
+                    .style('opacity', 0.9);
+            })
+            .on('mouseout', () => d3.select('.tooltip').transition().duration(300).ease(d3.easeElastic).style('opacity', 0)
+                .on('end', () => d3.select('.tooltip').style('display', 'none')))
+            .transition()
+            .duration(chartConfig.animationDuration / 2)
+            .delay((d, i) => i * 300)
+            .ease(d3.easeElastic)
+            .attr('opacity', 1)
+            .attr('r', 5);
+
+        let tfVisible = true, ocmVisible = true;
+        const { tfLegend, ocmLegend } = createScatterLegend(svg, width, [colorTF, colorOCM], fontScale);
+
+        tfLegend.on('click', () => {
+            tfVisible = !tfVisible;
+            tfLine.attr('opacity', tfVisible ? 1 : 0);
+            tfDots.attr('opacity', tfVisible ? 1 : 0);
+            tfLegend.select('rect').attr('opacity', tfVisible ? 1 : 0.3);
+        });
+
+        ocmLegend.on('click', () => {
+            ocmVisible = !ocmVisible;
+            ocmLine.attr('opacity', ocmVisible ? 1 : 0);
+            ocmDots.attr('opacity', ocmVisible ? 1 : 0);
+            ocmLegend.select('rect').attr('opacity', ocmVisible ? 1 : 0.3);
+        });
+
+        svg.on('click', () => showDetails(data, 'scatter', `Distribution of ${title} over time.`));
+    };
+
+    // Initial render
+    updateChart();
+
+    // Update chart on window resize
+    window.addEventListener('resize', updateChart);
 };
