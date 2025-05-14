@@ -14,18 +14,16 @@ const drawScatterChart = (container, data, title, colorTF, colorOCM) => {
         .style('font-size', `${12 * fontScale}px`);
     const { margin } = chartConfig;
     const x = d3.scalePoint().domain(data.map(d => d.label)).range([margin.left, width - margin.right]);
-    const maxTF = d3.max(data, d => d.total_tf || 0) * 1.2;
-    const maxOCM = d3.max(data, d => d.ocm_overall || 0) * 1.2;
-    const yTF = d3.scaleLinear().domain([0, maxTF]).nice().range([height - margin.bottom, margin.top]);
-    const yOCM = d3.scaleLinear().domain([0, maxOCM]).nice().range([height - margin.bottom + 5, margin.top - 5]); // Slight offset for clarity
-    console.log('yTF domain:', yTF.domain(), 'range:', yTF.range(), 'yTF(3.6):', yTF(3.6));
-    console.log('yOCM domain:', yOCM.domain(), 'range:', yOCM.range(), 'yOCM(1.6):', yOCM(1.6));
+    const maxValue = Math.max(d3.max(data, d => d.total_tf || 0), d3.max(data, d => d.ocm_overall || 0)) * 1.2; // e.g., 4.32
+    const yTF = d3.scaleLinear().domain([0, maxValue]).range([height - margin.bottom, margin.top]); // No .nice()
+    const yOCM = d3.scaleLinear().domain([0, maxValue]).range([height - margin.bottom, margin.top]); // No .nice(), synced with yTF
+    const ocmOffset = 20; // Pixel offset to shift OCM Overall line and dots down to prevent overlap
 
     createChartBase(svg, width, height, x, yTF, fontScale);
     svg.append('g')
         .attr('class', 'y-axis')
         .attr('transform', `translate(${width - margin.right}, 0)`)
-        .call(d3.axisRight(yOCM).ticks(5).tickFormat(d => d.toFixed(1))) // Temporarily show labels for debugging
+        .call(d3.axisRight(yOCM).ticks(5).tickFormat(d => d.toFixed(1))) // Shows exact values, e.g., 0, 1.1, 2.2, 3.2, 4.3
         .selectAll('text')
         .attr('fill', colorOCM)
         .style('font-size', `${10 * fontScale}px`)
@@ -37,7 +35,7 @@ const drawScatterChart = (container, data, title, colorTF, colorOCM) => {
     createEffects(svg);
 
     const lineTF = d3.line().x(d => x(d.label)).y(d => yTF(d.total_tf || 0)).curve(d3.curveMonotoneX);
-    const lineOCM = d3.line().x(d => x(d.label)).y(d => yOCM(d.ocm_overall || 0)).curve(d3.curveMonotoneX);
+    const lineOCM = d3.line().x(d => x(d.label)).y(d => yOCM(d.ocm_overall || 0) + ocmOffset).curve(d3.curveMonotoneX); // Apply offset
 
     const tfLine = svg.append('path')
         .datum(data)
@@ -75,7 +73,7 @@ const drawScatterChart = (container, data, title, colorTF, colorOCM) => {
         .append('circle')
         .attr('class', 'dot-tf')
         .attr('cx', d => x(d.label) - 5)
-        .attr('cy', d => yTF(d.total_tf || 0))
+        .attr('cy', d => yTF(d.total_tf || 0)) // Exact position at 3.6
         .attr('r', 0)
         .attr('fill', colorTF)
         .attr('stroke', '#fff')
@@ -110,7 +108,7 @@ const drawScatterChart = (container, data, title, colorTF, colorOCM) => {
         .append('circle')
         .attr('class', 'dot-ocm')
         .attr('cx', d => x(d.label) + 5)
-        .attr('cy', d => yOCM(d.ocm_overall || 0))
+        .attr('cy', d => yOCM(d.ocm_overall || 0) + ocmOffset) // Exact position at 1.6 with offset
         .attr('r', 0)
         .attr('fill', colorOCM)
         .attr('stroke', '#fff')
