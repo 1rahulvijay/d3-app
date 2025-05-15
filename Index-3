@@ -1,62 +1,132 @@
-const drawLollipopChart = (container, data, title) => {
+const drawLineChart = (container, data, title, color, colorEnd) => {
+    if (!data?.length) {
+        console.warn(`No data for Line Chart in ${container}`);
+        d3.select(container).append('text')
+            .attr('x', '50%')
+            .attr('y', '50%')
+            .attr('text-anchor', 'middle')
+            .attr('fill', getCSSVariable('--fg'))
+            .text('No data available');
+        return;
+    }
+
     const { width, height, fontScale } = getResponsiveDimensions(container);
     const svg = d3.select(container).append('svg')
         .attr('viewBox', `0 0 ${width} ${height}`)
         .style('font-size', `${12 * fontScale}px`);
     const { margin } = chartConfig;
     const x = d3.scalePoint().domain(data.map(d => d.label)).range([margin.left, width - margin.right]);
-    
-    // Adjust y-axis to focus on small differences
-    const minValue = d3.min(data, d => d.value);
-    const maxValue = d3.max(data, d => d.value);
-    const y = d3.scaleLinear()
-        .domain([minValue - 10, maxValue + 10]) // Small padding around data range
-        .range([height - margin.bottom, margin.top]);
+    const y = d3.scaleLinear();
 
-    createChartBase(svg, width, height, x, y, fontScale);
+    // Custom y-axis domain: Start 10% below the minimum value
+    const values = data.map(d => d.value).filter(v => v !== null && v !== undefined && !isNaN(v));
+    if (!values.length) {
+        console.warn('No valid values for Line Chart y-axis domain, using fallback [8000, 9000]');
+        y.domain([8000, 9000]).range([height - margin.bottom, margin.top]);
+    } else {
+        const [minVal, maxVal] = d3.extent(values);
+        const offset = (maxVal - minVal) * 0.1; // 10% of the range
+        const customMin = minVal - offset; // Start 10% below the minimum
+        y.domain([customMin, maxVal + offset]).nice(); // Use custom minimum and add padding above max
+        y.range([height - margin.bottom, margin.top]);
+        console.log('Line Chart y-axis domain:', [customMin, maxVal + offset]); // Debug: Log the domain
+    }
 
-    // Amplify small differences
-    const heightMultiplier = 5; // Amplify height differences by 5x
-    const lollipopHeight = d => (height - margin.bottom - y(d.value)) * heightMultiplier;
+    createChartBase(svg, width, height, x, y, fontScale, data);
 
-    // Draw sticks
-    svg.selectAll('.lollipop-stick')
-        .data(data)
-        .enter()
-        .append('line')
-        .attr('class', 'lollipop-stick')
-        .attr('x1', d => x(d.label))
-        .attr('x2', d => x(d.label))
-        .attr('y1', height - margin.bottom)
-        .attr('y2', d => y(d.value))
-        .attr('stroke', getCSSVariable('--primary'))
-        .attr('stroke-width', 2);
+    createEffects(svg);
+    const gradientId = `lineGradient-${Math.random().toString(36).substr(2, 9)}`;
+    const fill = createGradient(svg, gradientId, color, colorEnd);
 
-    // Draw lollipop heads (circles)
-    svg.selectAll('.lollipop-head')
+    // Adjust the area path to use the y-scale for the baseline
+    const area = d3.area()
+        .x(d => x(d.label))
+        .y0(y.domain()[0]) // Use the minimum of the y-domain
+        .y1(d => y(d.value))
+        .curve(d3.curveMonotoneX);
+    svg.append('path')
+        .datum(data)
+        .attr('fill', fill)
+        .attr('d', area)
+        .attr('opacity', 0)
+        .transition()
+        .duration(chartConfig.animationDuration)
+        .ease(d3.easeElastic)
+        .attr('opacity', 0.8);
+
+    const line = d3.line()
+        .x(d => x(d.label))
+        .y(d => y(d.value))
+        .curve(d3.curveMonotoneX);
+    svg.append('path')
+        .datum(data)
+        .attr('stroke', color)
+        .attr('stroke-width', 3)
+        .attr('fill', 'none')
+        .attr('d', line)
+        .attr('stroke-dasharray', function () { return this.getTotalLength(); })
+        .attr('stroke-dashoffset', function () { return this.getTotalLength(); })
+        .transition()
+        .duration(chartConfig.animationDuration)
+        .ease(d3.easeElastic)
+        .attr('stroke-dashoffset', 0);
+
+    svg.selectAll('circle')
         .data(data)
         .enter()
         .append('circle')
-        .attr('class', 'lollipop-head')
         .attr('cx', d => x(d.label))
         .attr('cy', d => y(d.value))
-        .attr('r', d => Math.min(10 + (d.value - minValue) * 0.5, 20)) // Dynamic radius based on value difference
-        .attr('fill', getCSSVariable('--primary'));
-
-    // Animation for sticks
-    svg.selectAll('.lollipop-stick')
-        .attr('y2', height - margin.bottom)
-        .transition()
-        .duration(chartConfig.animationDuration)
-        .attr('y2', d => y(d.value));
-
-    // Animation for heads
-    svg.selectAll('.lollipop-head')
         .attr('r', 0)
+        .attr('fill', color)
+        .attr('stroke', '#fff')
+        .attr('stroke-width', 2)
+        .style('cursor', 'pointer')
+        .attr('filter', 'url(#glow)')
+        .on('mouseover', (event, d) => {
+            const tooltipWidth = d3.select('.tooltip').node()?.offsetWidth || 200;
+            const xPos = Math.min(event.pageX + 10, window.innerWidth - tooltipWidth - 20);
+            d3.select('.tooltip')
+                .style('display', 'block')
+                .html(`<b>${d.label}</b><br>Value: ${d.value?.toFixed(1) || 'N/A'}<br>Trend: ${d.value > (data[data.indexOf(d) - 1]?.value || 0) ? '↑' : '↓'}`)
+                .style('left', `${xPos}px`)
+                .style('top', `${Math.max(event.pageY - 40, 20)}px`)
+                .transition()
+                .duration(200)
+                .ease(d3.easeElastic)
+                .style('opacity', 0.9);
+        })
+        .on('mouseout', () => d3.select('.tooltip')
+            .transition()
+            .duration(300)
+            .ease(d3.easeElastic)
+            .style('opacity', 0)
+            .on('end', () => d3.select('.tooltip').style('display', 'none')))
         .transition()
-        .duration(chartConfig.animationDuration)
-        .delay((d, i) => i * 100)
-        .attr('r', d => Math.min(10 + (d.value - minValue) * 0.5, 20));
+        .duration(chartConfig.animationDuration / 2)
+        .delay((d, i) => i * 300)
+        .ease(d3.easeElastic)
+        .attr('r', 6);
 
-    svg.on('click', () => showDetails(data, 'lollipop', `Distribution of ${title}`));
+    svg.selectAll('.data-label')
+        .data(data)
+        .enter()
+        .append('text')
+        .attr('class', 'data-label')
+        .attr('x', d => x(d.label))
+        .attr('y', d => y(d.value) - 10)
+        .attr('fill', getCSSVariable('--fg'))
+        .attr('text-anchor', 'middle')
+        .style('font-size', `${10 * fontScale}px`)
+        .style('opacity', 0)
+        .text(d => d.value.toFixed(0))
+        .transition()
+        .duration(chartConfig.animationDuration / 2)
+        .delay((d, i) => i * 300)
+        .ease(d3.easeElastic)
+        .style('opacity', 1);
+
+    createLegend(svg, width, color, 'ID Count', fontScale);
+
+    svg.on('click', () => showDetails(data, 'line', `Trend of ${title} over time.`));
 };
