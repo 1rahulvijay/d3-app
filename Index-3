@@ -10,26 +10,32 @@ const drawBarChart = (container, data, title, color, colorEnd, percentChange, co
             .text('No data available');
         return;
     }
+
     const { width, height, fontScale } = getResponsiveDimensions(container);
     const svg = d3.select(container).append('svg')
         .attr('viewBox', `0 0 ${width} ${height}`)
         .style('font-size', `${12 * fontScale}px`);
     const { margin } = chartConfig;
-    const x = d3.scaleBand().domain(data.map(d => d.label)).range([margin.left, width - margin.right]).padding(0.25);
+    const x = d3.scaleBand()
+        .domain(data.map(d => d.label))
+        .range([margin.left, width - margin.right])
+        .padding(0.25);
     const y = d3.scaleLinear();
 
     // Dynamic y-axis domain based on data
     const values = data.map(d => d.value).filter(v => v !== null && v !== undefined && !isNaN(v));
     if (!values.length) {
-        console.warn('No valid values for Bar Chart y-axis domain, using data extent or default range');
-        y.domain([0, 100]).range([height - margin.bottom, margin.top]); // Fallback to small range if no data
+        console.error('No valid numeric values for Bar Chart y-axis domain:', data);
+        y.domain([0, 100]).range([height - margin.bottom, margin.top]); // Minimal fallback
     } else {
         const [minVal, maxVal] = d3.extent(values);
-        const range = maxVal - minVal;
-        const offset = range * paddingFactor; // Dynamic padding based on range
-        const customMin = minVal - offset; // Start at min minus padding
-        y.domain([customMin, maxVal + offset]).nice(); // Extend above max with padding
-        console.log('Bar Chart y-axis domain:', y.domain()); // Debug: Log the domain
+        const range = maxVal - minVal || 1; // Avoid division by zero if minVal equals maxVal
+        const offset = range * paddingFactor;
+        const customMin = minVal - offset;
+        y.domain([customMin, maxVal + offset]).nice();
+        y.range([height - margin.bottom, margin.top]);
+        console.log('Bar Chart y-axis domain:', y.domain());
+        console.log('Bar Chart values:', values);
     }
 
     createChartBase(svg, width, height, x, y, fontScale, data);
@@ -39,8 +45,8 @@ const drawBarChart = (container, data, title, color, colorEnd, percentChange, co
     const fill = createGradient(svg, gradientId, color, colorEnd);
 
     // Start bars from the custom y-axis minimum
-    const baseline = y.domain()[0]; // Use the adjusted minimum as the baseline
-    svg.selectAll('rect')
+    const baseline = y.domain()[0];
+    const bars = svg.selectAll('rect')
         .data(data)
         .enter()
         .append('rect')
@@ -57,7 +63,8 @@ const drawBarChart = (container, data, title, color, colorEnd, percentChange, co
             const tooltipWidth = d3.select('.tooltip').node()?.offsetWidth || 200;
             const xPos = Math.min(event.pageX + 10, window.innerWidth - tooltipWidth - 20);
             const changeText = d === data[0] ? `<br>% Change: ${percentChange?.toFixed(2) || 'N/A'}%` : '';
-            d3.select('.tooltip').style('display', 'block')
+            d3.select('.tooltip')
+                .style('display', 'block')
                 .html(`<b>${d.label}</b><br>Value: ${d.value?.toFixed(1) || 'N/A'}${changeText}<br>Trend: ${d.value > (data[data.indexOf(d) - 1]?.value || 0) ? '↑' : '↓'}`)
                 .style('left', `${xPos}px`)
                 .style('top', `${Math.max(event.pageY - 40, 20)}px`)
@@ -66,14 +73,28 @@ const drawBarChart = (container, data, title, color, colorEnd, percentChange, co
                 .ease(d3.easeElastic)
                 .style('opacity', 0.9);
         })
-        .on('mouseout', () => d3.select('.tooltip').transition().duration(300).ease(d3.easeElastic).style('opacity', 0)
-            .on('end', () => d3.select('.tooltip').style('display', 'none')))
-        .transition()
+        .on('mouseout', () => d3.select('.tooltip')
+            .transition()
+            .duration(300)
+            .ease(d3.easeElastic)
+            .style('opacity', 0)
+            .on('end', () => d3.select('.tooltip').style('display', 'none')));
+
+    // Debug bar positions before animation
+    bars.each(function(d) {
+        console.log(`Bar for ${d.label}: x=${x(d.label)}, y=${y(baseline)}, width=${x.bandwidth()}, initial height=0`);
+    });
+
+    bars.transition()
         .duration(chartConfig.animationDuration)
         .delay((d, i) => i * 300)
         .ease(d3.easeElastic)
-        .attr('y', d => y(d.value)) // Animate to data value
-        .attr('height', d => Math.max(0, y(baseline) - y(d.value))); // Height from baseline to value, ensure non-negative
+        .attr('y', d => y(d.value))
+        .attr('height', d => {
+            const h = y(baseline) - y(d.value);
+            console.log(`Bar for ${d.label}: final y=${y(d.value)}, final height=${h}`);
+            return Math.max(0, h); // Ensure height is non-negative
+        });
 
     svg.selectAll('.data-label')
         .data(data)
@@ -86,12 +107,12 @@ const drawBarChart = (container, data, title, color, colorEnd, percentChange, co
         .attr('text-anchor', 'middle')
         .style('font-size', `${10 * fontScale}px`)
         .style('opacity', 0)
-        .text(d => d.value.toFixed(0))
         .transition()
         .duration(chartConfig.animationDuration / 2)
         .delay((d, i) => i * 300)
         .ease(d3.easeElastic)
-        .style('opacity', 1);
+        .style('opacity', 1)
+        .text(d => d.value.toFixed(0));
 
     createLegend(svg, width, color, 'GF Count', fontScale);
 
