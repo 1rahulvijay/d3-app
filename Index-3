@@ -1,6 +1,394 @@
+// Configuration for chart dimensions and responsive behavior
+const chartConfig = {
+    defaultWidth: 350,
+    defaultHeight: 240,
+    margin: { top: 50, right: 40, bottom: 50, left: 50 }, // Adjusted margins for better spacing
+    animationDuration: 2000, // Reduced for smoother, less jarring animations
+    mobileBreakpoint: 1366,
+    resolutions: {
+        '1366': { height: 180, fontScale: 0.8 },
+        '1920': { height: 240, fontScale: 1 },
+        '2560': { height: 288, fontScale: 1.1 },
+        '3440': { height: 312, fontScale: 1.2 },
+        '3840': { height: 336, fontScale: 1.3 }
+    }
+};
+
+// Available themes for the dashboard
+const themes = ['light-theme', 'dark-theme', 'corporate-theme', 'neutral-theme'];
+let currentTheme = 'light-theme';
+
+// Utility to get CSS variable values
+const getCSSVariable = (variable) =>
+    getComputedStyle(document.documentElement).getPropertyValue(variable).trim();
+
+// Determine responsive dimensions based on screen size
+const getResponsiveDimensions = (containerId) => {
+    const container = document.querySelector(containerId);
+    const screenWidth = window.innerWidth;
+    let width = container ? Math.max(container.clientWidth - 40, chartConfig.defaultWidth) : chartConfig.defaultWidth;
+    let height = chartConfig.defaultHeight;
+    let fontScale = 1;
+
+    if (screenWidth > 3840) {
+        height = chartConfig.resolutions['3840'].height;
+        fontScale = chartConfig.resolutions['3840'].fontScale;
+    }
+
+    for (let res in chartConfig.resolutions) {
+        if (screenWidth <= parseInt(res)) {
+            height = chartConfig.resolutions[res].height;
+            fontScale = chartConfig.resolutions[res].fontScale;
+            break;
+        }
+    }
+
+    return { width, height, fontScale };
+};
+
+// Fetch data from API and update metrics
+const fetchData = async () => {
+    const spinners = document.querySelectorAll('.loading-spinner');
+    spinners.forEach(spinner => spinner.style.display = 'block');
+
+    try {
+        const response = await fetch('/api/data', { cache: 'no-store' });
+        if (!response.ok) throw new Error(`HTTP error! Status: ${response.status}`);
+        const data = await response.json();
+        if (!data.metrics?.current_metrics) throw new Error('Invalid data structure');
+        const metrics = data.metrics.current_metrics;
+        const idCount = document.getElementById('metric-id-count');
+        const gfCount = document.getElementById('metric-gf-count');
+        const gfcCount = document.getElementById('metric-gfc-count');
+        if (idCount) idCount.innerHTML = `${metrics.count_id} <span class="${metrics.trends.count_id_trend === '↑' ? 'trend-up' : 'trend-down'}">${metrics.trends.count_id_trend}</span> (${metrics.trends.count_id_percent_change?.toFixed(2) || 'N/A'}%)`;
+        if (gfCount) gfCount.innerHTML = `${metrics.count_gf} <span class="${metrics.trends.count_gf_trend === '↑' ? 'trend-up' : 'trend-down'}">${metrics.trends.count_gf_trend}</span> (${metrics.trends.count_gf_percent_change?.toFixed(2) || 'N/A'}%)`;
+        if (gfcCount) gfCount.innerHTML = `${metrics.count_gfc} <span class="${metrics.trends.count_gfc_trend === '↑' ? 'trend-up' : 'trend-down'}">${metrics.trends.count_gfc_trend}</span> (${metrics.trends.count_gfc_percent_change?.toFixed(2) || 'N/A'}%)`;
+        return data || { lineData: [], barData: [], areaData: [], scatterData: [], metrics: {} };
+    } catch (error) {
+        console.error('Error fetching data:', error);
+        return { 
+            lineData: [],
+            barData: [],
+            areaData: [],
+            scatterData: [],
+            metrics: { 
+                current_metrics: { 
+                    count_id: 0, 
+                    count_gf: 0, 
+                    count_gfc: 0,
+                    trends: {
+                        count_id_trend: '↑',
+                        count_id_percent_change: 0,
+                        count_gf_trend: '↑',
+                        count_gf_percent_change: 0,
+                        count_gfc_trend: '↑',
+                        count_gfc_percent_change: 0
+                    }
+                }
+            }
+        };
+    } finally {
+        spinners.forEach(spinner => spinner.style.display = 'none');
+    }
+};
+
+// Theme and UI Controls
+const cycleTheme = () => {
+    currentTheme = themes[(themes.indexOf(currentTheme) + 1) % themes.length];
+    document.body.className = currentTheme;
+    refreshCharts();
+};
+
+const refreshCharts = () => {
+    document.querySelectorAll('.card svg').forEach(svg => svg.remove());
+    drawCharts();
+};
+
+const refreshData = async () => {
+    document.querySelectorAll('.card svg').forEach(svg => svg.remove());
+    await drawCharts();
+};
+
+const closeDetails = () => {
+    const details = document.getElementById('details');
+    if (details) details.classList.remove('open');
+};
+
+const switchTab = (id) => {
+    document.querySelectorAll('.tab, .tab-content').forEach(el => el.classList.remove('active'));
+    const tab = document.querySelector(`[onclick="switchTab('${id}')"]`);
+    const content = document.getElementById(id);
+    if (tab) tab.classList.add('active');
+    if (content) content.classList.add('active');
+};
+
+const exportToExcel = () => {
+    try {
+        const rows = document.querySelectorAll('#data-table-content tr');
+        if (rows.length <= 1) throw new Error('No data to export');
+        const csv = [...rows].map(row =>
+            [...row.children].map(cell => `"${cell.textContent.replace(/"/g, '""')}"`).join(',')
+        ).join('\n');
+        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = 'dashboard_data.csv';
+        link.click();
+        URL.revokeObjectURL(link.href);
+    } catch (error) {
+        console.error('Error exporting to CSV:', error);
+        alert('Failed to export to CSV. Please ensure the table has data and try again.');
+    }
+};
+
+// Chart Utilities
+const createTooltip = () => {
+    d3.select('.tooltip').remove();
+    return d3.select('body')
+        .append('div')
+        .attr('class', 'tooltip')
+        .style('position', 'absolute')
+        .style('opacity', 0)
+        .style('display', 'none')
+        .style('pointer-events', 'none')
+        .style('z-index', 9999)
+        .style('background', getCSSVariable('--card'))
+        .style('color', getCSSVariable('--fg'))
+        .style('padding', '8px 12px') // Increased padding for better readability
+        .style('font-size', '14px') // Larger font for clarity
+        .style('border-radius', '6px')
+        .style('box-shadow', '0 4px 12px rgba(0, 0, 0, 0.1)') // Softer shadow
+        .style('border', `1px solid ${getCSSVariable('--card-border')}`);
+};
+
+// Show details panel with data and alternative chart
+const showDetails = (data, type, summary) => {
+    if (!data?.length) {
+        alert('No data available to display.');
+        return;
+    }
+    const container = document.getElementById('details');
+    if (!container) {
+        console.error('Details container not found');
+        return;
+    }
+    if (container.classList.contains('open')) {
+        container.classList.remove('open');
+        return;
+    }
+    const overview = document.getElementById('overview-text');
+    const tableBody = document.querySelector('#data-table-content tbody');
+    if (overview) overview.textContent = summary;
+    if (tableBody) {
+        tableBody.innerHTML = data.map(d => `
+            <tr>
+                <td>${d.label || 'N/A'}</td>
+                <td>${type === 'scatter' ?
+                `TF: ${d.total_tf?.toFixed(2) || 'N/A'}, OCM: ${d.ocm_overall?.toFixed(2) || 'N/A'}` :
+                type === 'grouped-bar' ?
+                    `Baseline: ${d.baseline?.toFixed(2) || 'N/A'}, Growth: ${d.growth?.toFixed(2) || 'N/A'}` :
+                    `${(d.value ?? 'N/A').toFixed(2)}`}</td>
+            </tr>
+        `).join('');
+    }
+    const alt = d3.select('#alt-chart-content');
+    alt.selectAll('*').remove();
+    const { width, height } = getResponsiveDimensions('#alt-chart-content');
+    const svg = alt.append('svg').attr('viewBox', `0 0 ${width} ${Math.min(height, 180)}`);
+    switchTab('data-table');
+    container.classList.add('open');
+};
+
+// Create the base chart structure (axes, grid)
+const createChartBase = (svg, width, height, x, y, fontScale, data, accessor = d => d.value) => {
+    const { margin } = chartConfig;
+    // Calculate y-axis domain based on data
+    const values = data.map(accessor).filter(val => val !== undefined && val !== null);
+    if (!values.length) return y; // Return unmodified y if no valid data
+    const [minVal, maxVal] = d3.extent(values);
+    const range = maxVal - minVal;
+    const padding = range * 0.05 || (maxVal > 1000 ? 50 : 0.1); // 5% padding, 50 for counts, 0.1 for smaller ranges
+    y.domain([minVal - padding, maxVal + padding]).nice();
+    y.range([height - margin.bottom, margin.top]);
+
+    // Add x-axis grid lines
+    svg.append('g')
+        .attr('class', 'grid')
+        .attr('transform', `translate(0, ${height - margin.bottom})`)
+        .call(d3.axisBottom(x).tickSize(-height + margin.top + margin.bottom).tickFormat(''))
+        .selectAll('line')
+        .attr('stroke', getCSSVariable('--grid'))
+        .attr('stroke-opacity', 0.15) // Softer grid lines
+        .attr('stroke-dasharray', '4,4'); // More subtle dashing
+
+    // Add y-axis grid lines
+    svg.append('g')
+        .attr('class', 'grid')
+        .attr('transform', `translate(${margin.left}, 0)`)
+        .call(d3.axisLeft(y).tickSize(-width + margin.left + margin.right).tickFormat(''))
+        .selectAll('line')
+        .attr('stroke', getCSSVariable('--grid'))
+        .attr('stroke-opacity', 0.15)
+        .attr('stroke-dasharray', '4,4');
+
+    // Add x-axis
+    svg.append('g')
+        .attr('class', 'x-axis')
+        .attr('transform', `translate(0, ${height - margin.bottom})`)
+        .call(d3.axisBottom(x)
+            .ticks(Math.min(10, x.domain().length))
+            .tickFormat((d, i) => i % (Math.ceil(x.domain().length / 6)) === 0 ? d : '')
+            .tickPadding(8)) // Increased padding for better readability
+        .selectAll('text')
+        .attr('fill', getCSSVariable('--fg'))
+        .style('font-size', `${12 * fontScale}px`) // Larger font
+        .attr('transform', window.innerWidth <= chartConfig.mobileBreakpoint ? 'rotate(-30)' : 'rotate(0)') // Less aggressive rotation
+        .style('text-anchor', window.innerWidth <= chartConfig.mobileBreakpoint ? 'end' : 'middle')
+        .selectAll('line, path')
+        .attr('stroke', getCSSVariable('--fg'))
+        .attr('stroke-width', 1)
+        .attr('stroke-opacity', 0.5);
+
+    // Add y-axis
+    svg.append('g')
+        .attr('class', 'y-axis')
+        .attr('transform', `translate(${margin.left}, 0)`)
+        .call(d3.axisLeft(y).ticks(5).tickFormat(d => d.toFixed(maxVal > 1000 ? 0 : 2)))
+        .selectAll('text')
+        .attr('fill', getCSSVariable('--fg'))
+        .style('font-size', `${12 * fontScale}px`)
+        .selectAll('line, path')
+        .attr('stroke', getCSSVariable('--fg'))
+        .attr('stroke-width', 1)
+        .attr('stroke-opacity', 0.5);
+
+    return y;
+};
+
+// Create gradient for chart fills
+const createGradient = (svg, id, colorStart, colorEnd) => {
+    const defs = svg.append('defs');
+    const gradient = defs.append('linearGradient')
+        .attr('id', id)
+        .attr('x1', '0%')
+        .attr('y1', '0%')
+        .attr('x2', '0%')
+        .attr('y2', '100%');
+    gradient.append('stop')
+        .attr('offset', '0%')
+        .style('stop-color', colorStart)
+        .style('stop-opacity', 0.5); // Softer opacity
+    gradient.append('stop')
+        .attr('offset', '100%')
+        .style('stop-color', colorEnd)
+        .style('stop-opacity', 0.1);
+    return `url(#${id})`;
+};
+
+// Create SVG effects (shadow, glow)
+const createEffects = (svg) => {
+    const defs = svg.append('defs');
+    const shadow = defs.append('filter').attr('id', 'drop-shadow').attr('height', '130%');
+    shadow.append('feDropShadow')
+        .attr('dx', 0.5) // Softer shadow
+        .attr('dy', 0.5)
+        .attr('stdDeviation', 2)
+        .attr('flood-opacity', 0.2);
+    const glow = defs.append('filter').attr('id', 'glow');
+    glow.append('feGaussianBlur').attr('stdDeviation', '2').attr('result', 'coloredBlur');
+    const feMerge = glow.append('feMerge');
+    feMerge.append('feMergeNode').attr('in', 'coloredBlur');
+    feMerge.append('feMergeNode').attr('in', 'SourceGraphic');
+};
+
+// Create legend for single-series charts
+const createLegend = (svg, width, height, color, text, fontScale) => {
+    const legend = svg.append('g')
+        .attr('class', 'legend')
+        .attr('transform', `translate(${width - chartConfig.margin.right - 80}, ${chartConfig.margin.top - 30})`)
+        .attr('opacity', 0);
+    legend.append('rect')
+        .attr('width', 14)
+        .attr('height', 14)
+        .attr('fill', color)
+        .attr('filter', 'url(#glow)')
+        .attr('rx', 3) // Rounded corners for a modern look
+        .attr('ry', 3);
+    legend.append('text')
+        .attr('x', 24)
+        .attr('y', 12)
+        .attr('fill', getCSSVariable('--fg'))
+        .style('font-size', `${14 * fontScale}px`) // Larger font
+        .style('font-weight', '500') // Medium weight for better readability
+        .text(text);
+    legend.transition()
+        .duration(500)
+        .attr('opacity', 1);
+    return legend;
+};
+
+// Create legend for scatter chart (dual series)
+const createScatterLegend = (svg, width, height, colors, fontScale) => {
+    const legend = svg.append('g')
+        .attr('class', 'legend')
+        .attr('transform', `translate(${width - chartConfig.margin.right - 180}, ${chartConfig.margin.top - 30})`)
+        .attr('opacity', 0);
+    const items = [
+        { text: 'Total TF', color: colors[0] },
+        { text: 'OCM Overall', color: colors[1] }
+    ];
+    const legendItems = legend.selectAll('.legend-item')
+        .data(items)
+        .enter()
+        .append('g')
+        .attr('class', 'legend-item')
+        .attr('transform', (d, i) => `translate(${i * 100}, 0)`)
+        .style('cursor', 'pointer');
+    legendItems.append('rect')
+        .attr('width', 14)
+        .attr('height', 14)
+        .attr('fill', d => d.color)
+        .attr('filter', 'url(#glow)')
+        .attr('rx', 3)
+        .attr('ry', 3);
+    legendItems.append('text')
+        .attr('x', 24)
+        .attr('y', 12)
+        .attr('fill', getCSSVariable('--fg'))
+        .style('font-size', `${14 * fontScale}px`)
+        .style('font-weight', '500')
+        .text(d => d.text);
+
+    legend.transition()
+        .duration(500)
+        .attr('opacity', 1);
+    return { tfLegend: legendItems.filter((d, i) => i === 0), ocmLegend: legendItems.filter((d, i) => i === 1) };
+};
+
+// Draw all charts
+const drawCharts = async () => {
+    const data = await fetchData();
+    const primaryColorStart = '#4A90E2'; // Softer blue for better aesthetics
+    const primaryColorEnd = '#A3CFFA'; // Lighter blue for gradient
+    const charts = [
+        { id: '#line-chart', data: data.lineData, title: 'ID Count Trend', color: primaryColorStart, colorEnd: primaryColorEnd, type: 'line' },
+        { id: '#bar-chart', data: data.barData, title: 'GF Count by Month', color: primaryColorStart, colorEnd: primaryColorEnd, type: 'bar', percentChange: data.metrics.current_metrics.trends.count_gf_percent_change },
+        { id: '#area-chart', data: data.areaData, title: 'GFC Count Trend', color: primaryColorStart, colorEnd: primaryColorEnd, type: 'line' }, // Changed to line chart
+        { id: '#scatter-chart', data: data.scatterData, title: 'ID Distribution', colors: ['#FF6B6B', '#4ECDC4'], type: 'scatter' } // Softer red and teal for scatter
+    ];
+
+    charts.forEach(chart => {
+        switch (chart.type) {
+            case 'line': drawLineChart(chart.id, chart.data, chart.title, chart.color, chart.colorEnd); break;
+            case 'bar': drawBarChart(chart.id, chart.data, chart.title, chart.color, chart.colorEnd, chart.percentChange); break;
+            case 'scatter': drawScatterChart(chart.id, chart.data, chart.title, chart.colors[0], chart.colors[1]); break;
+        }
+    });
+};
+
+// Draw Line Chart (ID Count Trend and GFC Count Trend)
 const drawLineChart = (container, data, title, color, colorEnd) => {
     if (!data?.length) {
-        console.warn(`No data for Line Chart in ${container}`);
         d3.select(container).append('text')
             .attr('x', '50%')
             .attr('y', '50%')
@@ -9,39 +397,23 @@ const drawLineChart = (container, data, title, color, colorEnd) => {
             .text('No data available');
         return;
     }
-
     const { width, height, fontScale } = getResponsiveDimensions(container);
     const svg = d3.select(container).append('svg')
         .attr('viewBox', `0 0 ${width} ${height}`)
-        .style('font-size', `${12 * fontScale}px`);
+        .style('font-size', `${14 * fontScale}px`); // Larger base font
     const { margin } = chartConfig;
     const x = d3.scalePoint().domain(data.map(d => d.label)).range([margin.left, width - margin.right]);
     const y = d3.scaleLinear();
-
-    // Custom y-axis domain: Start 10% below the minimum value
-    const values = data.map(d => d.value).filter(v => v !== null && v !== undefined && !isNaN(v));
-    if (!values.length) {
-        console.warn('No valid values for Line Chart y-axis domain, using fallback [8000, 9000]');
-        y.domain([8000, 9000]).range([height - margin.bottom, margin.top]);
-    } else {
-        const [minVal, maxVal] = d3.extent(values);
-        const offset = (maxVal - minVal) * 0.1; // 10% of the range
-        const customMin = minVal - offset; // Start 10% below the minimum
-        y.domain([customMin, maxVal + offset]).nice(); // Use custom minimum and add padding above max
-        y.range([height - margin.bottom, margin.top]);
-        console.log('Line Chart y-axis domain:', [customMin, maxVal + offset]); // Debug: Log the domain
-    }
-
     createChartBase(svg, width, height, x, y, fontScale, data);
 
     createEffects(svg);
     const gradientId = `lineGradient-${Math.random().toString(36).substr(2, 9)}`;
     const fill = createGradient(svg, gradientId, color, colorEnd);
 
-    // Adjust the area path to use the y-scale for the baseline
+    // Draw filled area under the line
     const area = d3.area()
         .x(d => x(d.label))
-        .y0(y.domain()[0]) // Use the minimum of the y-domain
+        .y0(height - margin.bottom)
         .y1(d => y(d.value))
         .curve(d3.curveMonotoneX);
     svg.append('path')
@@ -51,9 +423,10 @@ const drawLineChart = (container, data, title, color, colorEnd) => {
         .attr('opacity', 0)
         .transition()
         .duration(chartConfig.animationDuration)
-        .ease(d3.easeElastic)
-        .attr('opacity', 0.8);
+        .ease(d3.easeCubic)
+        .attr('opacity', 0.3); // More subtle area fill
 
+    // Draw the line
     const line = d3.line()
         .x(d => x(d.label))
         .y(d => y(d.value))
@@ -61,16 +434,17 @@ const drawLineChart = (container, data, title, color, colorEnd) => {
     svg.append('path')
         .datum(data)
         .attr('stroke', color)
-        .attr('stroke-width', 3)
+        .attr('stroke-width', 2) // Thinner line for elegance
         .attr('fill', 'none')
         .attr('d', line)
         .attr('stroke-dasharray', function () { return this.getTotalLength(); })
         .attr('stroke-dashoffset', function () { return this.getTotalLength(); })
         .transition()
         .duration(chartConfig.animationDuration)
-        .ease(d3.easeElastic)
+        .ease(d3.easeCubic)
         .attr('stroke-dashoffset', 0);
 
+    // Add data points as circles
     svg.selectAll('circle')
         .data(data)
         .enter()
@@ -80,53 +454,308 @@ const drawLineChart = (container, data, title, color, colorEnd) => {
         .attr('r', 0)
         .attr('fill', color)
         .attr('stroke', '#fff')
-        .attr('stroke-width', 2)
+        .attr('stroke-width', 1.5)
         .style('cursor', 'pointer')
         .attr('filter', 'url(#glow)')
         .on('mouseover', (event, d) => {
             const tooltipWidth = d3.select('.tooltip').node()?.offsetWidth || 200;
             const xPos = Math.min(event.pageX + 10, window.innerWidth - tooltipWidth - 20);
-            d3.select('.tooltip')
-                .style('display', 'block')
+            d3.select('.tooltip').style('display', 'block')
                 .html(`<b>${d.label}</b><br>Value: ${d.value?.toFixed(1) || 'N/A'}<br>Trend: ${d.value > (data[data.indexOf(d) - 1]?.value || 0) ? '↑' : '↓'}`)
                 .style('left', `${xPos}px`)
                 .style('top', `${Math.max(event.pageY - 40, 20)}px`)
                 .transition()
                 .duration(200)
-                .ease(d3.easeElastic)
+                .ease(d3.easeCubic)
                 .style('opacity', 0.9);
         })
-        .on('mouseout', () => d3.select('.tooltip')
-            .transition()
-            .duration(300)
-            .ease(d3.easeElastic)
-            .style('opacity', 0)
+        .on('mouseout', () => d3.select('.tooltip').transition().duration(300).ease(d3.easeCubic).style('opacity', 0)
             .on('end', () => d3.select('.tooltip').style('display', 'none')))
         .transition()
         .duration(chartConfig.animationDuration / 2)
-        .delay((d, i) => i * 300)
-        .ease(d3.easeElastic)
-        .attr('r', 6);
+        .delay((d, i) => i * 100)
+        .ease(d3.easeCubic)
+        .attr('r', 5);
 
+    // Add data labels (optional, can be removed if too cluttered)
     svg.selectAll('.data-label')
         .data(data)
         .enter()
         .append('text')
         .attr('class', 'data-label')
         .attr('x', d => x(d.label))
-        .attr('y', d => y(d.value) - 10)
+        .attr('y', d => y(d.value) - 15) // Adjusted position
         .attr('fill', getCSSVariable('--fg'))
         .attr('text-anchor', 'middle')
-        .style('font-size', `${10 * fontScale}px`)
+        .style('font-size', `${12 * fontScale}px`)
         .style('opacity', 0)
         .text(d => d.value.toFixed(0))
         .transition()
         .duration(chartConfig.animationDuration / 2)
-        .delay((d, i) => i * 300)
-        .ease(d3.easeElastic)
-        .style('opacity', 1);
+        .delay((d, i) => i * 100)
+        .ease(d3.easeCubic)
+        .style('opacity', 0.7);
 
-    createLegend(svg, width, color, 'ID Count', fontScale);
+    createLegend(svg, width, height, color, title.split(' ')[0] + ' Count', fontScale);
 
     svg.on('click', () => showDetails(data, 'line', `Trend of ${title} over time.`));
 };
+
+// Draw Bar Chart (GF Count by Month)
+const drawBarChart = (container, data, title, color, colorEnd, percentChange) => {
+    if (!data?.length) {
+        d3.select(container).append('text')
+            .attr('x', '50%')
+            .attr('y', '50%')
+            .attr('text-anchor', 'middle')
+            .attr('fill', getCSSVariable('--fg'))
+            .text('No data available');
+        return;
+    }
+    const { width, height, fontScale } = getResponsiveDimensions(container);
+    const svg = d3.select(container).append('svg')
+        .attr('viewBox', `0 0 ${width} ${height}`)
+        .style('font-size', `${14 * fontScale}px`);
+    const { margin } = chartConfig;
+    const x = d3.scaleBand().domain(data.map(d => d.label)).range([margin.left, width - margin.right]).padding(0.3); // Increased padding for better spacing
+    const y = d3.scaleLinear();
+    createChartBase(svg, width, height, x, y, fontScale, data);
+
+    createEffects(svg);
+    const gradientId = `barGradient-${Math.random().toString(36).substr(2, 9)}`;
+    const fill = createGradient(svg, gradientId, color, colorEnd);
+
+    // Draw bars
+    svg.selectAll('rect')
+        .data(data)
+        .enter()
+        .append('rect')
+        .attr('x', d => x(d.label))
+        .attr('y', d => y(0))
+        .attr('width', x.bandwidth())
+        .attr('height', 0)
+        .attr('fill', fill)
+        .attr('rx', 4) // Softer rounded corners
+        .attr('ry', 4)
+        .style('cursor', 'pointer')
+        .attr('filter', 'url(#glow)')
+        .on('mouseover', (event, d) => {
+            const tooltipWidth = d3.select('.tooltip').node()?.offsetWidth || 200;
+            const xPos = Math.min(event.pageX + 10, window.innerWidth - tooltipWidth - 20);
+            const changeText = d === data[0] ? `<br>% Change: ${percentChange?.toFixed(2) || 'N/A'}%` : '';
+            d3.select('.tooltip').style('display', 'block')
+                .html(`<b>${d.label}</b><br>Value: ${d.value?.toFixed(1) || 'N/A'}${changeText}<br>Trend: ${d.value > (data[data.indexOf(d) - 1]?.value || 0) ? '↑' : '↓'}`)
+                .style('left', `${xPos}px`)
+                .style('top', `${Math.max(event.pageY - 40, 20)}px`)
+                .transition()
+                .duration(200)
+                .ease(d3.easeCubic)
+                .style('opacity', 0.9);
+        })
+        .on('mouseout', () => d3.select('.tooltip').transition().duration(300).ease(d3.easeCubic).style('opacity', 0)
+            .on('end', () => d3.select('.tooltip').style('display', 'none')))
+        .transition()
+        .duration(chartConfig.animationDuration)
+        .delay((d, i) => i * 100)
+        .ease(d3.easeCubic)
+        .attr('y', d => y(d.value))
+        .attr('height', d => height - margin.bottom - y(d.value));
+
+    // Add data labels
+    svg.selectAll('.data-label')
+        .data(data)
+        .enter()
+        .append('text')
+        .attr('class', 'data-label')
+        .attr('x', d => x(d.label) + x.bandwidth() / 2)
+        .attr('y', d => y(d.value) - 10)
+        .attr('fill', getCSSVariable('--fg'))
+        .attr('text-anchor', 'middle')
+        .style('font-size', `${12 * fontScale}px`)
+        .style('opacity', 0)
+        .text(d => d.value.toFixed(0))
+        .transition()
+        .duration(chartConfig.animationDuration / 2)
+        .delay((d, i) => i * 100)
+        .ease(d3.easeCubic)
+        .style('opacity', 0.7);
+
+    createLegend(svg, width, height, color, 'GF Count', fontScale);
+
+    svg.on('click', () => showDetails(data, 'bar', `Distribution of ${title} over time. Current month % change: ${percentChange?.toFixed(2) || 'N/A'}%`));
+};
+
+// Draw Scatter Chart (ID Distribution) with single y-axis
+const drawScatterChart = (container, data, title, colorTF, colorOCM) => {
+    if (!data?.length) {
+        d3.select(container).append('text')
+            .attr('x', '50%')
+            .attr('y', '50%')
+            .attr('text-anchor', 'middle')
+            .attr('fill', getCSSVariable('--fg'))
+            .text('No data available');
+        return;
+    }
+    const { width, height, fontScale } = getResponsiveDimensions(container);
+    const svg = d3.select(container).append('svg')
+        .attr('viewBox', `0 0 ${width} ${height}`)
+        .style('font-size', `${14 * fontScale}px`);
+    const { margin } = chartConfig;
+    const x = d3.scalePoint().domain(data.map(d => d.label)).range([margin.left, width - margin.right]);
+
+    // Normalize total_tf and ocm_overall to a 0-1 scale
+    const tfExtent = d3.extent(data, d => d.total_tf || 0);
+    const ocmExtent = d3.extent(data, d => d.ocm_overall || 0);
+    const normalize = (value, extent) => (value - extent[0]) / (extent[1] - extent[0]);
+    const normalizedData = data.map(d => ({
+        label: d.label,
+        total_tf: normalize(d.total_tf || 0, tfExtent),
+        ocm_overall: normalize(d.ocm_overall || 0, ocmExtent),
+        original_tf: d.total_tf,
+        original_ocm: d.ocm_overall
+    }));
+
+    // Use a single y-axis for normalized values
+    const y = d3.scaleLinear();
+    createChartBase(svg, width, height, x, y, fontScale, normalizedData, d => Math.max(d.total_tf, d.ocm_overall));
+
+    createEffects(svg);
+
+    // Draw lines for total_tf and ocm_overall
+    const lineTF = d3.line().x(d => x(d.label)).y(d => y(d.total_tf)).curve(d3.curveMonotoneX);
+    const lineOCM = d3.line().x(d => x(d.label)).y(d => y(d.ocm_overall)).curve(d3.curveMonotoneX);
+
+    const tfLine = svg.append('path')
+        .datum(normalizedData)
+        .attr('class', 'tf-line')
+        .attr('stroke', colorTF)
+        .attr('stroke-width', 2)
+        .attr('fill', 'none')
+        .attr('d', lineTF)
+        .attr('stroke-dasharray', function () { return this.getTotalLength(); })
+        .attr('stroke-dashoffset', function () { return this.getTotalLength(); })
+        .transition()
+        .duration(chartConfig.animationDuration)
+        .ease(d3.easeCubic)
+        .attr('stroke-dashoffset', 0);
+
+    const ocmLine = svg.append('path')
+        .datum(normalizedData)
+        .attr('class', 'ocm-line')
+        .attr('stroke', colorOCM)
+        .attr('stroke-width', 2)
+        .attr('fill', 'none')
+        .attr('d', lineOCM)
+        .attr('stroke-dasharray', function () { return this.getTotalLength(); })
+        .attr('stroke-dashoffset', function () { return this.getTotalLength(); })
+        .transition()
+        .duration(chartConfig.animationDuration)
+        .ease(d3.easeCubic)
+        .attr('stroke-dashoffset', 0);
+
+    // Draw dots for total_tf
+    const tfDots = svg.selectAll('.dot-tf')
+        .data(normalizedData)
+        .enter()
+        .append('circle')
+        .attr('class', 'dot-tf')
+        .attr('cx', d => x(d.label))
+        .attr('cy', d => y(d.total_tf))
+        .attr('r', 0)
+        .attr('fill', colorTF)
+        .attr('stroke', '#fff')
+        .attr('stroke-width', 1.5)
+        .style('cursor', 'pointer')
+        .attr('filter', 'url(#glow)')
+        .on('mouseover', (event, d) => {
+            const tooltipWidth = d3.select('.tooltip').node()?.offsetWidth || 200;
+            const xPos = Math.min(event.pageX + 10, window.innerWidth - tooltipWidth - 20);
+            d3.select('.tooltip').style('display', 'block')
+                .html(`<b>${d.label}</b><br>Total TF: ${d.original_tf?.toFixed(2) || 'N/A'}`)
+                .style('left', `${xPos}px`)
+                .style('top', `${Math.max(event.pageY - 40, 20)}px`)
+                .transition()
+                .duration(200)
+                .ease(d3.easeCubic)
+                .style('opacity', 0.9);
+        })
+        .on('mouseout', () => d3.select('.tooltip').transition().duration(300).ease(d3.easeCubic).style('opacity', 0)
+            .on('end', () => d3.select('.tooltip').style('display', 'none')))
+        .transition()
+        .duration(chartConfig.animationDuration / 2)
+        .delay((d, i) => i * 100)
+        .ease(d3.easeCubic)
+        .attr('r', 5);
+
+    // Draw dots for ocm_overall
+    const ocmDots = svg.selectAll('.dot-ocm')
+        .data(normalizedData)
+        .enter()
+        .append('circle')
+        .attr('class', 'dot-ocm')
+        .attr('cx', d => x(d.label))
+        .attr('cy', d => y(d.ocm_overall))
+        .attr('r', 0)
+        .attr('fill', colorOCM)
+        .attr('stroke', '#fff')
+        .attr('stroke-width', 1.5)
+        .style('cursor', 'pointer')
+        .attr('filter', 'url(#glow)')
+        .on('mouseover', (event, d) => {
+            const tooltipWidth = d3.select('.tooltip').node()?.offsetWidth || 200;
+            const xPos = Math.min(event.pageX + 10, window.innerWidth - tooltipWidth - 20);
+            d3.select('.tooltip').style('display', 'block')
+                .html(`<b>${d.label}</b><br>OCM Overall: ${d.original_ocm?.toFixed(2) || 'N/A'}`)
+                .style('left', `${xPos}px`)
+                .style('top', `${Math.max(event.pageY - 40, 20)}px`)
+                .transition()
+                .duration(200)
+                .ease(d3.easeCubic)
+                .style('opacity', 0.9);
+        })
+        .on('mouseout', () => d3.select('.tooltip').transition().duration(300).ease(d3.easeCubic).style('opacity', 0)
+            .on('end', () => d3.select('.tooltip').style('display', 'none')))
+        .transition()
+        .duration(chartConfig.animationDuration / 2)
+        .delay((d, i) => i * 100)
+        .ease(d3.easeCubic)
+        .attr('r', 5);
+
+    // Add legend with toggle functionality
+    let tfVisible = true, ocmVisible = true;
+    const { tfLegend, ocmLegend } = createScatterLegend(svg, width, height, [colorTF, colorOCM], fontScale);
+
+    tfLegend.on('click', () => {
+        tfVisible = !tfVisible;
+        tfLine.attr('opacity', tfVisible ? 1 : 0);
+        tfDots.attr('opacity', tfVisible ? 1 : 0);
+        tfLegend.select('rect').attr('opacity', tfVisible ? 1 : 0.3);
+    });
+
+    ocmLegend.on('click', () => {
+        ocmVisible = !ocmVisible;
+        ocmLine.attr('opacity', ocmVisible ? 1 : 0);
+        ocmDots.attr('opacity', ocmVisible ? 1 : 0);
+        ocmLegend.select('rect').attr('opacity', ocmVisible ? 1 : 0.3);
+    });
+
+    svg.on('click', () => showDetails(data, 'scatter', `Distribution of ${title} over time.`));
+};
+
+// Debounce function to optimize event handling
+const debounce = (func, wait) => {
+    let timeout;
+    return (...args) => {
+        clearTimeout(timeout);
+        timeout = setTimeout(() => func.apply(this, args), wait);
+    };
+};
+
+// Initialize charts on page load
+const initializeCharts = () => {
+    createTooltip();
+    refreshCharts();
+};
+
+document.addEventListener('DOMContentLoaded', initializeCharts);
+window.addEventListener('resize', debounce(initializeCharts, 150));
